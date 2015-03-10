@@ -37,9 +37,11 @@ import com.datatorrent.lib.util.NumberAggregate;
 /**
  * Implementation of basic number counters.
  *
+ * @deprecated use {@link Counters}
  * @param <T> type of counter
  * @since 1.0.2
  */
+@Deprecated
 @JsonSerialize(using = BasicCounters.Serializer.class)
 public class BasicCounters<T extends Number & Mutable> implements Serializable
 {
