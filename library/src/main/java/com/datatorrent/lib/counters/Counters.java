@@ -93,7 +93,6 @@ public class Counters
   public static class Aggregator implements Context.CountersAggregator, Serializable
   {
 
-    @SuppressWarnings("ConstantConditions")
     @Override
     public Object aggregate(Collection<?> countersList)
     {
@@ -105,7 +104,7 @@ public class Counters
 
         List<NumberCounter.AggregateMethod> aggregateMethods = viewOfCounters.getAggregateMethods();
 
-        boolean calculateSumOnlyForAvg = aggregateMethods.contains(NumberCounter.AggregateMethod.AVERAGE) &&
+        boolean calculateSumOnlyForAvg = aggregateMethods.contains(NumberCounter.AggregateMethod.AVG) &&
           !aggregateMethods.contains(NumberCounter.AggregateMethod.SUM);
 
         int count = 0;
@@ -136,7 +135,7 @@ public class Counters
               else if (method == NumberCounter.AggregateMethod.SUM || calculateSumOnlyForAvg) {
                 updatedVal = getSumOf(first, entry.getValue().getNumberValue());
               }
-              else if (method == NumberCounter.AggregateMethod.AVERAGE && count == countersList.size()) {
+              else if (method == NumberCounter.AggregateMethod.AVG && count == countersList.size()) {
                 updatedVal = subMap.get(
                   NumberCounter.AggregateMethod.SUM.getDisplayName()).doubleValue() / (count * 1.0);
 

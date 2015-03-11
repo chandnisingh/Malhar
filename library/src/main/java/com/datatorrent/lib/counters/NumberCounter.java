@@ -40,7 +40,7 @@ public interface NumberCounter
 
   public static enum AggregateMethod
   {
-    AVERAGE("average"), SUM("sum"), MIN("min"), MAX("max");
+    AVG("avg"), SUM("sum"), MIN("min"), MAX("max");
 
     private final String displayName;
 
