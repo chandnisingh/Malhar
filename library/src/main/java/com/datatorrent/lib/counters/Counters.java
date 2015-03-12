@@ -21,16 +21,15 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import javax.annotation.Nullable;
-import javax.validation.constraints.NotNull;
-
 import org.codehaus.jackson.JsonGenerator;
 import org.codehaus.jackson.map.JsonSerializer;
 import org.codehaus.jackson.map.SerializerProvider;
 import org.codehaus.jackson.map.annotate.JsonSerialize;
 
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
 
 import com.datatorrent.api.Context;
 
@@ -50,7 +49,7 @@ public class Counters
   /**
    * Returns the counter if it exists; null otherwise
    *
-   * @param counterKey
+   * @param counterKey counter key
    * @return counter corresponding to the counter key.
    */
   public synchronized NumberCounter getCounter(String counterKey)
@@ -99,95 +98,35 @@ public class Counters
       //counter key -> (aggregate method -> aggregated value)
       Map<String, Map<String, Number>> result = Maps.newHashMap();
 
-      NumberCounter viewOfCounters = ((Counters) countersList.iterator().next()).getCopy().values().iterator().next();
-      if (viewOfCounters.getAggregateMethods() != null) {
+      //counter key : list of counter objects of all partitions
+      Multimap<String, NumberCounter> counterPool = ArrayListMultimap.create();
 
-        List<NumberCounter.AggregateMethod> aggregateMethods = viewOfCounters.getAggregateMethods();
+      for (Object counter : countersList) {
+        Counters counters = (Counters) counter;
+        ImmutableMap<String, NumberCounter> copy = counters.getCopy();
 
-        boolean calculateSumOnlyForAvg = aggregateMethods.contains(NumberCounter.AggregateMethod.AVG) &&
-          !aggregateMethods.contains(NumberCounter.AggregateMethod.SUM);
-
-        int count = 0;
-        for (Object counter : countersList) {
-          count++;
-          Counters counters = (Counters) counter;
-
-          ImmutableMap<String, NumberCounter> copy = counters.getCopy();
-
-          for (Map.Entry<String, NumberCounter> entry : copy.entrySet()) {
-
-            Map<String, Number> subMap = result.get(entry.getKey());
-            if (subMap == null) {
-              subMap = Maps.newHashMap();
-              result.put(entry.getKey(), subMap);
-            }
-
-            for (NumberCounter.AggregateMethod method : aggregateMethods) {
-              Number first = subMap.get(method.getDisplayName());
-              Number updatedVal = null;
-
-              if (method == NumberCounter.AggregateMethod.MIN) {
-                updatedVal = getMinOf(first, entry.getValue().getNumberValue());
-              }
-              else if (method == NumberCounter.AggregateMethod.MAX) {
-                updatedVal = getMaxOf(first, entry.getValue().getNumberValue());
-              }
-              else if (method == NumberCounter.AggregateMethod.SUM || calculateSumOnlyForAvg) {
-                updatedVal = getSumOf(first, entry.getValue().getNumberValue());
-              }
-              else if (method == NumberCounter.AggregateMethod.AVG && count == countersList.size()) {
-                updatedVal = subMap.get(
-                  NumberCounter.AggregateMethod.SUM.getDisplayName()).doubleValue() / (count * 1.0);
-
-                if (calculateSumOnlyForAvg) {
-                  subMap.remove(method.getDisplayName());
-                }
-              }
-              if (updatedVal != null) {
-                subMap.put(method.getDisplayName(), updatedVal);
-              }
-            }
-
-          }
+        for (Map.Entry<String, NumberCounter> entry : copy.entrySet()) {
+          counterPool.put(entry.getKey(), entry.getValue());
         }
       }
 
+      for (String counterKey : counterPool.keySet()) {
+        Collection<NumberCounter> ncs = counterPool.get(counterKey);
+        List<AggregateMethod> aggregateMethods = ncs.iterator().next().getAggregateMethods();
+
+        Map<String, Number> counterResult = Maps.newHashMap();
+        result.put(counterKey, counterResult);
+
+        if (aggregateMethods != null) {
+          for (AggregateMethod method : aggregateMethods) {
+
+            Number aggregate = method.aggregate(ncs.toArray(new NumberCounter[ncs.size()]));
+            counterResult.put(method.getName(), aggregate);
+          }
+        }
+      }
       return result;
     }
-
-    private Number getMinOf(@Nullable Number first, @NotNull Number second)
-    {
-      if (first == null) {
-        return second;
-      }
-      if (first instanceof Integer || first instanceof Long) {
-        return Math.min(first.longValue(), first.longValue());
-      }
-      return Math.min(first.doubleValue(), first.doubleValue());
-    }
-
-    private Number getMaxOf(@Nullable Number first, @NotNull Number second)
-    {
-      if (first == null) {
-        return second;
-      }
-      if (first instanceof Integer || first instanceof Long) {
-        return Math.max(first.longValue(), first.longValue());
-      }
-      return Math.max(first.doubleValue(), first.doubleValue());
-    }
-
-    private Number getSumOf(@Nullable Number first, @NotNull Number second)
-    {
-      if (first == null) {
-        return second;
-      }
-      if (first instanceof Integer || first instanceof Long) {
-        return first.longValue() + first.longValue();
-      }
-      return second.doubleValue() + second.doubleValue();
-    }
-
     private static final long serialVersionUID = 201503091713L;
 
   }

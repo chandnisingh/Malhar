@@ -38,23 +38,6 @@ public interface NumberCounter
    */
   List<AggregateMethod> getAggregateMethods();
 
-  public static enum AggregateMethod
-  {
-    AVG("avg"), SUM("sum"), MIN("min"), MAX("max");
-
-    private final String displayName;
-
-    AggregateMethod(String displayName)
-    {
-      this.displayName = displayName;
-    }
-
-    public String getDisplayName()
-    {
-      return displayName;
-    }
-  }
-
   public static class IntegerCounter extends MutableInt implements NumberCounter
   {
     @Override
@@ -66,7 +49,8 @@ public interface NumberCounter
     @Override
     public List<AggregateMethod> getAggregateMethods()
     {
-      return Lists.newArrayList(AggregateMethod.SUM);
+      return Lists.newArrayList(new AggregateMethod.AvgAggregateMethod(), new AggregateMethod.SumAggregateMethod(),
+        new AggregateMethod.MaxAggregateMethod(), new AggregateMethod.MinAggregateMethod());
     }
   }
 
@@ -82,7 +66,8 @@ public interface NumberCounter
     @Override
     public List<AggregateMethod> getAggregateMethods()
     {
-      return Lists.newArrayList(AggregateMethod.SUM);
+      return Lists.newArrayList(new AggregateMethod.AvgAggregateMethod(), new AggregateMethod.SumAggregateMethod(),
+        new AggregateMethod.MaxAggregateMethod(), new AggregateMethod.MinAggregateMethod());
     }
   }
 
@@ -98,7 +83,8 @@ public interface NumberCounter
     @Override
     public List<AggregateMethod> getAggregateMethods()
     {
-      return Lists.newArrayList(AggregateMethod.SUM);
+      return Lists.newArrayList(new AggregateMethod.AvgAggregateMethod(), new AggregateMethod.SumAggregateMethod(),
+        new AggregateMethod.MaxAggregateMethod(), new AggregateMethod.MinAggregateMethod());
     }
   }
 }
