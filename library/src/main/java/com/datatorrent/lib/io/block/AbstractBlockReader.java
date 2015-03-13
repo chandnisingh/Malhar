@@ -36,7 +36,6 @@ import com.datatorrent.api.*;
 
 import com.datatorrent.lib.counters.Metric;
 import com.datatorrent.lib.counters.Metrics;
-import com.datatorrent.lib.counters.SumAggregateMethods;
 
 /**
  * AbstractBlockReader processes a block of data from a stream.<br/>
@@ -335,6 +334,7 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
       Metric<? extends Number> targetMetric = target.getMetric(entry.getKey());
       if (targetMetric == null) {
         targetMetric = entry.getValue();
+        target.addMetric(targetMetric);
       }
       else {
         if (targetMetric instanceof Metric.IntegerMetric) {
