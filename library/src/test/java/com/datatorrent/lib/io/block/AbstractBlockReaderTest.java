@@ -3,7 +3,6 @@ package com.datatorrent.lib.io.block;
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.commons.lang.mutable.MutableLong;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.junit.Assert;
 import org.junit.Test;
@@ -16,7 +15,8 @@ import com.datatorrent.api.Stats;
 import com.datatorrent.api.StatsListener;
 
 import com.datatorrent.common.util.Slice;
-import com.datatorrent.lib.counters.BasicCounters;
+import com.datatorrent.lib.counters.Metric;
+import com.datatorrent.lib.counters.Metrics;
 import com.datatorrent.lib.util.TestUtils;
 
 /**
@@ -132,7 +132,11 @@ public class AbstractBlockReaderTest
 
     for (Partitioner.Partition<AbstractBlockReader<Slice, BlockMetadata.FileBlockMetadata, FSDataInputStream>> partition :
       newPartitions) {
-      partition.getPartitionedInstance().counters.setCounter(AbstractBlockReader.ReaderCounterKeys.BLOCKS, new MutableLong(1));
+      AbstractBlockReader<Slice, BlockMetadata.FileBlockMetadata, FSDataInputStream> brInstance = partition.getPartitionedInstance();
+      Metric.IntegerMetric blocksMetric = new Metric.IntegerMetric("blocks");
+      blocksMetric.add(1);
+
+      brInstance.metrics.addMetric(blocksMetric);
 
       newMocks.add(
         new TestUtils.MockPartition<AbstractBlockReader<Slice, BlockMetadata.FileBlockMetadata, FSDataInputStream>>(
@@ -145,7 +149,7 @@ public class AbstractBlockReaderTest
     Assert.assertEquals(1, newPartitions.size());
 
     AbstractBlockReader<Slice, BlockMetadata.FileBlockMetadata, FSDataInputStream> last = newPartitions.iterator().next().getPartitionedInstance();
-    Assert.assertEquals("num blocks", 8, last.counters.getCounter(AbstractBlockReader.ReaderCounterKeys.BLOCKS).longValue());
+    Assert.assertEquals("num blocks", 8, last.metrics.getMetric("blocks").getNumberValue());
   }
 
   static class ReaderStats extends Stats.OperatorStats
@@ -153,10 +157,19 @@ public class AbstractBlockReaderTest
 
     ReaderStats(int backlog, long readBlocks, long bytes, long time)
     {
-      BasicCounters<MutableLong> bc = new BasicCounters<MutableLong>(MutableLong.class);
-      bc.setCounter(AbstractBlockReader.ReaderCounterKeys.BLOCKS, new MutableLong(readBlocks));
-      bc.setCounter(AbstractBlockReader.ReaderCounterKeys.BYTES, new MutableLong(bytes));
-      bc.setCounter(AbstractBlockReader.ReaderCounterKeys.TIME, new MutableLong(time));
+      Metrics bc = new Metrics();
+
+      Metric.IntegerMetric blocksMetric = new Metric.IntegerMetric("blocks");
+      blocksMetric.setValue(readBlocks);
+      bc.addMetric(blocksMetric);
+
+      Metric.LongMetric bytesMetric = new Metric.LongMetric("bytes");
+      bytesMetric.setValue(bytes);
+      bc.addMetric(new Metric.LongMetric("bytes"));
+
+      Metric.LongMetric timeMetric = new Metric.LongMetric("time");
+      timeMetric.setValue(time);
+      bc.addMetric(timeMetric);
 
       counters = bc;
 

@@ -22,7 +22,6 @@ import java.util.*;
 
 import javax.validation.constraints.NotNull;
 
-import org.apache.commons.lang.mutable.MutableLong;
 import org.apache.hadoop.fs.PositionedReadable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +34,9 @@ import com.google.common.collect.Maps;
 
 import com.datatorrent.api.*;
 
-import com.datatorrent.lib.counters.BasicCounters;
+import com.datatorrent.lib.counters.Metric;
+import com.datatorrent.lib.counters.Metrics;
+import com.datatorrent.lib.counters.SumAggregateMethods;
 
 /**
  * AbstractBlockReader processes a block of data from a stream.<br/>
@@ -72,7 +73,11 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
 
   protected transient int blocksPerWindow;
 
-  protected final BasicCounters<MutableLong> counters;
+  protected final Metrics metrics;
+  protected transient Metric.LongMetric bytesMetric = new Metric.LongMetric("bytes");
+  protected transient Metric.LongMetric timeMetric = new Metric.LongMetric("time");
+  protected transient Metric.LongMetric recordsMetric = new Metric.LongMetric("records");
+  protected transient Metric.IntegerMetric blocksMetric = new Metric.IntegerMetric("blocks");
 
   protected transient Context.OperatorContext context;
 
@@ -128,7 +133,7 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
     response = new StatsListener.Response();
     backlogPerOperator = Maps.newHashMap();
     partitionCount = 1;
-    counters = new BasicCounters<MutableLong>(MutableLong.class);
+    metrics = new Metrics();
     collectStats = true;
     lastBlockOpenTime = -1;
   }
@@ -140,10 +145,11 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
     LOG.debug("{}: partition keys {} mask {}", operatorId, partitionKeys, partitionMask);
 
     this.context = context;
-    counters.setCounter(ReaderCounterKeys.BLOCKS, new MutableLong());
-    counters.setCounter(ReaderCounterKeys.RECORDS, new MutableLong());
-    counters.setCounter(ReaderCounterKeys.BYTES, new MutableLong());
-    counters.setCounter(ReaderCounterKeys.TIME, new MutableLong());
+    metrics.addMetric(blocksMetric);
+    metrics.addMetric(bytesMetric);
+    metrics.addMetric(timeMetric);
+    metrics.addMetric(recordsMetric);
+
     sleepTimeMillis = context.getValue(Context.OperatorContext.SPIN_MILLIS);
   }
 
@@ -180,8 +186,8 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
   @Override
   public void endWindow()
   {
-    counters.getCounter(ReaderCounterKeys.BLOCKS).add(blocksPerWindow);
-    context.setCounters(counters);
+    blocksMetric.add(blocksPerWindow);
+    context.setCounters(metrics);
   }
 
   protected void processBlockMetadata(B block)
@@ -199,7 +205,7 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
       }
       readBlock(block);
       lastProcessedBlock = block;
-      counters.getCounter(ReaderCounterKeys.TIME).add(System.currentTimeMillis() - blockStartTime);
+      timeMetric.add(System.currentTimeMillis() - blockStartTime);
       //emit block metadata only when the block finishes
       if (blocksMetadataOutput.isConnected()) {
         blocksMetadataOutput.emit(block);
@@ -232,13 +238,13 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
     ReaderContext.Entity entity;
     while ((entity = readerContext.next()) != null) {
 
-      counters.getCounter(ReaderCounterKeys.BYTES).add(entity.getUsedBytes());
+      bytesMetric.add(entity.getUsedBytes());
 
       R record = convertToRecord(entity.getRecord());
 
       //If the record is partial then ignore the record.
       if (record != null) {
-        counters.getCounter(ReaderCounterKeys.RECORDS).increment();
+        recordsMetric.increment();
         messages.emit(new ReaderRecord<R>(blockMetadata.getBlockId(), record));
       }
     }
@@ -264,14 +270,14 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
     }
     partitions.clear();
     int morePartitionsToCreate = partitionCount - newPartitions.size();
-    List<BasicCounters<MutableLong>> deletedCounters = Lists.newArrayList();
+    List<Metrics> deletedCounters = Lists.newArrayList();
 
     if (morePartitionsToCreate < 0) {
       //Delete partitions
       Iterator<Partition<AbstractBlockReader<R, B, STREAM>>> partitionIterator = newPartitions.iterator();
       while (morePartitionsToCreate++ < 0) {
         Partition<AbstractBlockReader<R, B, STREAM>> toRemove = partitionIterator.next();
-        deletedCounters.add(toRemove.getPartitionedInstance().counters);
+        deletedCounters.add(toRemove.getPartitionedInstance().metrics);
 
         LOG.debug("partition removed {}", toRemove.getPartitionedInstance().operatorId);
         partitionIterator.remove();
@@ -308,8 +314,8 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
     }
     //transfer the counters
     AbstractBlockReader<R, B, STREAM> targetReader = newPartitions.iterator().next().getPartitionedInstance();
-    for (BasicCounters<MutableLong> removedCounter : deletedCounters) {
-      addCounters(targetReader.counters, removedCounter);
+    for (Metrics removedCounter : deletedCounters) {
+      addCounters(targetReader.metrics, removedCounter);
     }
 
     return newPartitions;
@@ -321,17 +327,22 @@ public abstract class AbstractBlockReader<R, B extends BlockMetadata, STREAM ext
    * @param target target counter
    * @param source removed counter
    */
-  protected void addCounters(BasicCounters<MutableLong> target, BasicCounters<MutableLong> source)
+  protected void addCounters(Metrics target, Metrics source)
   {
-    for (Enum<ReaderCounterKeys> key : ReaderCounterKeys.values()) {
-      MutableLong tcounter = target.getCounter(key);
-      if (tcounter == null) {
-        tcounter = new MutableLong();
-        target.setCounter(key, tcounter);
+
+    for (Map.Entry<String, Metric<? extends Number>> entry : source.getCopy().entrySet()) {
+
+      Metric<? extends Number> targetMetric = target.getMetric(entry.getKey());
+      if (targetMetric == null) {
+        targetMetric = entry.getValue();
       }
-      MutableLong scounter = source.getCounter(key);
-      if (scounter != null) {
-        tcounter.add(scounter.longValue());
+      else {
+        if (targetMetric instanceof Metric.IntegerMetric) {
+          ((Metric.IntegerMetric) targetMetric).add(entry.getValue().getNumberValue());
+        }
+        else {
+          ((Metric.LongMetric) targetMetric).add(entry.getValue().getNumberValue());
+        }
       }
     }
   }
