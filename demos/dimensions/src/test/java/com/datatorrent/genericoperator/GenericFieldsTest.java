@@ -32,16 +32,18 @@ public class GenericFieldsTest
   @Test
   public void test() throws Exception
   {
-    int numCalls = 10000000;
+    int numCalls = 1000000000;
     TestBean bean = new TestBean();
     Method m = TestBean.class.getMethod("getIntValue");
 
     long tms = System.currentTimeMillis();
+
     for (int i=0; i<numCalls; i++) {
       Object r = m.invoke(bean);
       //System.out.println("" + r);
     }
     System.out.println("reflection took " + (System.currentTimeMillis() - tms) + "ms");
+    System.gc();
 
     MethodAccess methodAccess = MethodAccess.get(TestBean.class);
     int methodIndex = methodAccess.getIndex("getIntValue");

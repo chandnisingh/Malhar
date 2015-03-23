@@ -4,22 +4,54 @@
  */
 package com.datatorrent.genericoperator;
 
+import java.lang.reflect.InvocationTargetException;
+
+import org.codehaus.commons.compiler.CompileException;
+import org.codehaus.janino.ExpressionEvaluator;
+
 import com.datatorrent.api.Context.OperatorContext;
+import com.datatorrent.api.DefaultInputPort;
+import com.datatorrent.api.DefaultOutputPort;
 import com.datatorrent.api.Operator;
+import com.datatorrent.common.util.DTThrowable;
 
 public class GenericSum implements Operator
 {
-  String sourceFieldName;
-  Class sourceClass;
-  String destFieldName;
-  Class destClass;
+  public DefaultInputPort<Object> input = new DefaultInputPort<Object>() {
+    @Override
+    public void process(Object input)
+    {
+      try {
+        exprEvaluator.evaluate(new Object[]{input, outputBean});
+      } catch (InvocationTargetException e) {
+        throw new RuntimeException(e);
+      }
+    }
+  };
 
+  public DefaultOutputPort<Object> output = new DefaultOutputPort<Object>();
+
+  String expression;
+  String sourceFieldName;
+  Class<?> inputClass;
+  String destFieldName;
+  Class<?> outputClass;
+  Object outputBean;
+
+  private transient ExpressionEvaluator exprEvaluator;
 
   @Override
   public void setup(OperatorContext arg0)
   {
-    // TODO Auto-generated method stub
-
+    try {
+      exprEvaluator = new ExpressionEvaluator(expression,
+          void.class, // expressionType
+          new String[] { "input", "output" }, // parameterNames
+          new Class[] { inputClass, outputClass } // parameterTypes
+      );
+    } catch (CompileException e) {
+      throw new RuntimeException("Failed to compile expression " + expression, e);
+    }
   }
 
   @Override
@@ -32,15 +64,17 @@ public class GenericSum implements Operator
   @Override
   public void beginWindow(long arg0)
   {
-    // TODO Auto-generated method stub
-
+    try {
+      outputBean = outputClass.newInstance();
+    } catch (Exception e) {
+      DTThrowable.rethrow(e);
+    }
   }
 
   @Override
   public void endWindow()
   {
-    // TODO Auto-generated method stub
-
+    output.emit(outputBean);
   }
 
 }
