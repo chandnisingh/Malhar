@@ -7,11 +7,16 @@ package com.datatorrent.genericoperator;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import junit.framework.Assert;
+
 import org.apache.commons.io.FileUtils;
+import org.jruby.ir.CodeVersion;
 import org.junit.Test;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
@@ -42,9 +47,25 @@ public class GenerateClassTest
     mainMethod.instructions.add(new InsnNode(Opcodes.RETURN));
     //Add the method to the classNode
     classNode.methods.add(mainMethod);
+
     //Write the class
     ClassWriter cw=new ClassWriter(ClassWriter.COMPUTE_MAXS|ClassWriter.COMPUTE_FRAMES);
     classNode.accept(cw);
+
+    // add default constructor
+    MethodVisitor cv = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+    cv.visitVarInsn(Opcodes.ALOAD, 0);
+    cv.visitMethodInsn(Opcodes.INVOKESPECIAL,
+        "java/lang/Object", "<init>", "()V");
+    cv.visitInsn(Opcodes.RETURN);
+    cv.visitMaxs(1, 1);
+
+    // add a field
+    String fieldName = "stringField";
+    String fieldType = "Ljava/lang/String;";
+    Object initValue = null;
+    cw.visitField(Opcodes.ACC_PUBLIC, fieldName, fieldType, null, initValue).visitEnd();
+
     //Dump the class in a file
     File outDir=new File("target/asmtest");
     outDir.mkdirs();
@@ -62,6 +83,11 @@ public class GenerateClassTest
     Class<?> clazz = new ByteArrayClassLoader().defineClass("asm.Generated", bytes);
     Method m = clazz.getMethod("main", String[].class);
     m.invoke(null, new Object[] {null});
+
+    Object o = clazz.newInstance();
+
+    Field f = clazz.getField("stringField");
+    Assert.assertNotNull(f);
 
   }
 
