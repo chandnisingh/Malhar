@@ -10,6 +10,8 @@ import org.codehaus.janino.ExpressionEvaluator;
 import org.junit.Test;
 
 import com.esotericsoftware.reflectasm.MethodAccess;
+import org.codehaus.commons.compiler.CompilerFactoryFactory;
+import org.codehaus.commons.compiler.IScriptEvaluator;
 
 public class GenericFieldsTest
 {
@@ -66,8 +68,20 @@ public class GenericFieldsTest
       Object r = ee.evaluate(args);
     }
     System.out.println("Janino generated code took " + (System.currentTimeMillis() - tms) + "ms");
+    System.gc();
 
+    // janino fast evaluator
+    IScriptEvaluator se = CompilerFactoryFactory.getDefaultCompilerFactory().newScriptEvaluator();
+    Helper helper = (Helper)se.createFastEvaluator("return a.getIntValue();",
+                                       Helper.class,
+                                       new String[] {"a"});
+    tms = System.currentTimeMillis();
+    for (int i = 0; i < numCalls; i++) {
+      Object r = helper.compute(bean);
+    }
+    System.out.println("janino fast evaluator call took " + (System.currentTimeMillis() - tms) + "ms");
 
+    // static call
     tms = System.currentTimeMillis();
     for (int i=0; i<numCalls; i++) {
       Object r = bean.getIntValue();
@@ -76,6 +90,9 @@ public class GenericFieldsTest
 
   }
 
+  public static interface Helper {
+    public Object compute(TestBean bean);
+  }
 
   @Test
   public void janinoTest() throws Exception
