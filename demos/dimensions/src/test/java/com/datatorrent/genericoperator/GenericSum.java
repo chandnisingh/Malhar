@@ -32,9 +32,9 @@ public class GenericSum implements Operator
   public DefaultOutputPort<Object> output = new DefaultOutputPort<Object>();
 
   String expression;
-  String sourceFieldName;
+  //String sourceFieldName;
   Class<?> inputClass;
-  String destFieldName;
+  //String destFieldName;
   Class<?> outputClass;
   Object outputBean;
 
