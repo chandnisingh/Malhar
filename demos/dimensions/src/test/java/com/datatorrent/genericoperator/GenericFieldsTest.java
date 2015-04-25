@@ -38,8 +38,22 @@ public class GenericFieldsTest
     TestBean bean = new TestBean();
     Method m = TestBean.class.getMethod("getIntValue");
 
+    // janino
+    ExpressionEvaluator ee = new ExpressionEvaluator(
+            "tuple.getIntValue()", // expression
+            int.class, // expressionType
+            new String[] {"tuple"}, // parameterNames
+            new Class[] {TestBean.class} // parameterTypes
+            );
     long tms = System.currentTimeMillis();
+    Object[] args = new Object[] {bean};
+    for (int i = 0; i < numCalls; i++) {
+      Object r = ee.evaluate(args);
+    }
+    System.out.println("Janino generated code took " + (System.currentTimeMillis() - tms) + "ms");
+    System.gc();
 
+    tms = System.currentTimeMillis();
     for (int i=0; i<numCalls; i++) {
       Object r = m.invoke(bean);
       //System.out.println("" + r);
@@ -54,21 +68,6 @@ public class GenericFieldsTest
       Object r = methodAccess.invoke(bean, methodIndex);
     }
     System.out.println("ASM generated code took " + (System.currentTimeMillis() - tms) + "ms");
-
-    // janino
-    ExpressionEvaluator ee = new ExpressionEvaluator(
-        "tuple.getIntValue()",                     // expression
-        int.class,                           // expressionType
-        new String[] { "tuple" },           // parameterNames
-        new Class[] { TestBean.class } // parameterTypes
-    );
-    tms = System.currentTimeMillis();
-    Object[] args = new Object[] {bean};
-    for (int i=0; i<numCalls; i++) {
-      Object r = ee.evaluate(args);
-    }
-    System.out.println("Janino generated code took " + (System.currentTimeMillis() - tms) + "ms");
-    System.gc();
 
     // janino fast evaluator
     IScriptEvaluator se = CompilerFactoryFactory.getDefaultCompilerFactory().newScriptEvaluator();
@@ -87,6 +86,25 @@ public class GenericFieldsTest
       Object r = bean.getIntValue();
     }
     System.out.println("static call took " + (System.currentTimeMillis() - tms) + "ms");
+    System.gc();
+
+    // janino for generation & asm for execution
+    ee = new ExpressionEvaluator();
+    ee.setStaticMethod(false);
+    ee.setParameters(new String[] {"tuple"}, new Class[] {TestBean.class});
+    ee.setExpressionType(int.class);
+    ee.cook("tuple.getIntValue()");
+
+    Method method = ee.getMethod();
+    Object methodClass = method.getDeclaringClass().newInstance();
+    MethodAccess access = MethodAccess.get(method.getDeclaringClass());
+    int methodIdx = access.getIndex(method.getName());
+
+    tms = System.currentTimeMillis();
+    for (int i = 0; i < numCalls; i++) {
+      Object r = access.invoke(methodClass, methodIdx, bean);
+    }
+    System.out.println("janino for generation & asm for execution " + (System.currentTimeMillis() - tms) + "ms");
 
   }
 
