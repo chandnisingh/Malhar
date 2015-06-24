@@ -20,10 +20,8 @@ import java.net.URI;
 import java.util.EnumSet;
 import java.util.List;
 
-import org.apache.commons.lang.ArrayUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
-import org.apache.hadoop.fs.permission.FsPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,13 +73,6 @@ public class FSStorageAgent implements StorageAgent, Serializable
       else {
         fileContext = FileContext.getFileContext(conf == null ? new Configuration() : conf);
       }
-      try {
-        fileContext.getFileStatus(lPath);
-      }
-      catch (FileNotFoundException fae) {
-        fileContext.mkdir(lPath, FsPermission.getDefault(), true);
-      }
-      fileContext.setWorkingDirectory(lPath);
     }
     catch (IOException ex) {
       throw new RuntimeException(ex);
@@ -93,7 +84,7 @@ public class FSStorageAgent implements StorageAgent, Serializable
   public void save(Object object, int operatorId, long windowId) throws IOException
   {
     String operatorIdStr = String.valueOf(operatorId);
-    Path lPath = new Path(operatorIdStr, TMP_FILE);
+    Path lPath = new Path(path + Path.SEPARATOR + operatorIdStr + Path.SEPARATOR + TMP_FILE);
     String window = Long.toHexString(windowId);
     boolean stateSaved = false;
     FSDataOutputStream stream = null;
@@ -121,7 +112,8 @@ public class FSStorageAgent implements StorageAgent, Serializable
       finally {
         if (stateSaved) {
           logger.debug("Saving {}: {}", operatorId, window);
-          fileContext.rename(lPath, new Path(operatorIdStr, window), Options.Rename.OVERWRITE);
+          fileContext.rename(lPath, new Path(path + Path.SEPARATOR + operatorIdStr + Path.SEPARATOR + window),
+            Options.Rename.OVERWRITE);
         }
       }
     }
@@ -130,7 +122,7 @@ public class FSStorageAgent implements StorageAgent, Serializable
   @Override
   public Object load(int operatorId, long windowId) throws IOException
   {
-    Path lPath = new Path(String.valueOf(operatorId), Long.toHexString(windowId));
+    Path lPath = new Path(path + Path.SEPARATOR + String.valueOf(operatorId) + Path.SEPARATOR + Long.toHexString(windowId));
     logger.debug("Loading: {}", lPath);
 
     FSDataInputStream stream = fileContext.open(lPath);
@@ -145,7 +137,7 @@ public class FSStorageAgent implements StorageAgent, Serializable
   @Override
   public void delete(int operatorId, long windowId) throws IOException
   {
-    Path lPath = new Path(String.valueOf(operatorId), Long.toHexString(windowId));
+    Path lPath = new Path(path + Path.SEPARATOR + String.valueOf(operatorId) + Path.SEPARATOR + Long.toHexString(windowId));
     logger.debug("Deleting: {}", lPath);
 
     fileContext.delete(lPath, false);
@@ -154,23 +146,27 @@ public class FSStorageAgent implements StorageAgent, Serializable
   @Override
   public long[] getWindowIds(int operatorId) throws IOException
   {
-    Path lPath = new Path(String.valueOf(operatorId));
+    Path lPath = new Path(path + Path.SEPARATOR + String.valueOf(operatorId));
 
     RemoteIterator<FileStatus> fileStatusRemoteIterator = fileContext.listStatus(lPath);
     if (!fileStatusRemoteIterator.hasNext()) {
       throw new IOException("Storage Agent has not saved anything yet!");
     }
-    List<Long> windowIds = Lists.newArrayList();
+    List<Long> lwindows = Lists.newArrayList();
     do {
       FileStatus fileStatus = fileStatusRemoteIterator.next();
       String name = fileStatus.getPath().getName();
       if (name.equals(TMP_FILE)) {
         continue;
       }
-      windowIds.add(STATELESS_CHECKPOINT_WINDOW_ID.equals(name) ? Stateless.WINDOW_ID : Long.parseLong(name, 16));
+      lwindows.add(STATELESS_CHECKPOINT_WINDOW_ID.equals(name) ? Stateless.WINDOW_ID : Long.parseLong(name, 16));
     }
     while (fileStatusRemoteIterator.hasNext());
-    return ArrayUtils.toPrimitive(windowIds.toArray(new Long[windowIds.size()]));
+    long[] windowIds = new long[lwindows.size()];
+    for (int i = 0; i < windowIds.length; i++) {
+      windowIds[i] = lwindows.get(i);
+    }
+    return windowIds;
   }
 
   public static void store(OutputStream stream, Object operator)
