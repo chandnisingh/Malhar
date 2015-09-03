@@ -38,6 +38,10 @@ import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Output;
+import com.esotericsoftware.kryo.serializers.FieldSerializer;
+import com.esotericsoftware.kryo.serializers.MapSerializer;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
@@ -61,11 +65,13 @@ import com.datatorrent.lib.io.block.BlockMetadata.FileBlockMetadata;
  * The file system/directory space should be different for different partitions of file splitter.
  * The scanning of
  *
+ * @deprecated use {@link FileSplitterInput}
  * @displayName File Splitter
  * @category Input
  * @tags file
  * @since 2.0.0
  */
+@Deprecated
 @OperatorAnnotation(checkpointableWithinAppWindow = false)
 public class FileSplitter implements InputOperator, Operator.CheckpointListener
 {
@@ -396,7 +402,9 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
 
   /**
    * An {@link Iterator} for Block-Metadatas of a file.
+   * @deprecated use {@link FileSplitterInput.BlockMetadataIterator}
    */
+  @Deprecated
   public static class BlockMetadataIterator implements Iterator<FileBlockMetadata>
   {
     private final FileMetadata fileMetadata;
@@ -453,7 +461,9 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
 
   /**
    * Represents the file metadata - file path, name, no. of blocks, etc.
+   * @deprecated use {@link FileSplitterInput.FileMetadata}
    */
+  @Deprecated
   public static class FileMetadata
   {
     @NotNull
@@ -614,6 +624,10 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
     }
   }
 
+  /**
+   * @deprecated use {@link FileSplitterInput.TimeBasedDirectoryScanner}
+   */
+  @Deprecated
   public static class TimeBasedDirectoryScanner implements Component<Context.OperatorContext>, Runnable
   {
     private static long DEF_SCAN_INTERVAL_MILLIS = 5000;
@@ -644,6 +658,8 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
     protected transient Pattern regex;
     protected transient long sleepMillis;
 
+    private final transient Lock lock;
+
     public TimeBasedDirectoryScanner()
     {
       lastModifiedTimes = Maps.newHashMap();
@@ -654,6 +670,7 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
       discoveredFiles = new LinkedBlockingDeque<FileInfo>();
       atomicThrowable = new AtomicReference<Throwable>();
       ignoredFiles = Sets.newHashSet();
+      lock = new Lock();
     }
 
     @Override
@@ -697,11 +714,13 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
       try {
         while (running) {
           if (trigger || (System.currentTimeMillis() - scanIntervalMillis >= lastScanMillis)) {
-            trigger = false;
-            for (String afile : files) {
-              scan(new Path(afile), null);
+            synchronized (lock) {  //pauses this thread while kryo is serializing lastModifiedTimes
+              trigger = false;
+              for (String afile : files) {
+                scan(new Path(afile), null);
+              }
+              scanComplete();
             }
-            scanComplete();
           }
           else {
             Thread.sleep(sleepMillis);
@@ -934,11 +953,28 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
     {
       this.scanIntervalMillis = scanIntervalMillis;
     }
+
+    private static class Lock
+    {
+    }
+
+    private class ModifiedTimesSerializer extends MapSerializer
+    {
+      @Override
+      public void write(Kryo kryo, Output output, Map map)
+      {
+        synchronized (lock) {
+          super.write(kryo, output, map);
+        }
+      }
+    }
   }
 
   /**
    * A class that represents the file discovered by time-based scanner.
+   * @deprecated use {@link FileSplitterInput.FileInfo}
    */
+  @Deprecated
   protected static class FileInfo
   {
     protected final String directoryPath;

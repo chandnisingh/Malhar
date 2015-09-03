@@ -25,6 +25,7 @@
     <module>uniquecount</module>
     <module>r</module>
     <module>echoserver</module>
+    <module>examples</module>
   </modules>
 
   <properties>
@@ -120,8 +121,7 @@
               <phase>package</phase>
               <configuration>
                 <target>
-                  <move file="${project.build.directory}/${project.artifactId}-${project.version}-apexapp.jar"
-                        tofile="${project.build.directory}/${project.artifactId}-${project.version}.apa" />
+                  <move file="${project.build.directory}/${project.artifactId}-${project.version}-apexapp.jar" tofile="${project.build.directory}/${project.artifactId}-${project.version}.apa"/>
                 </target>
               </configuration>
               <goals>

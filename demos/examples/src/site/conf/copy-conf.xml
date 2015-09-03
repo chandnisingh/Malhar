@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<configuration>
+  <property>
+    <name>dt.application.Copy.operator.Input.prop.scanner.files</name>
+    <value>/user/chandni/copy/source</value>
+  </property>
+  <property>
+    <name>dt.application.Copy.operator.Writer.prop.filePath</name>
+    <value>/user/chandni/copy/target</value>
+  </property>
+</configuration>
