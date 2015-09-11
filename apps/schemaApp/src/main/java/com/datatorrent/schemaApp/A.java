@@ -9,10 +9,12 @@ package com.datatorrent.schemaApp;
  */
 public class A extends B
 {
-  @Override
   /**
+   * Sets the property 2 in A
+   *
    * @omitFromUI
    */
+  @Override
   public void setProp2(String prop2)
   {
     super.setProp2(prop2);

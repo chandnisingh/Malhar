@@ -30,7 +30,7 @@ public class B extends BaseOperator
   }
 
   /**
-   * Sets the property 2.
+   * Sets the property 2 in B
    *
    * @param prop2
    */
