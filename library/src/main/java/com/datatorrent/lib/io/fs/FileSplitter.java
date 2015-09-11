@@ -38,10 +38,10 @@ import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.esotericsoftware.kryo.DefaultSerializer;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Output;
 import com.esotericsoftware.kryo.serializers.FieldSerializer;
-import com.esotericsoftware.kryo.serializers.MapSerializer;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
@@ -104,6 +104,8 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
   protected transient long currentWindowId;
 
   protected final BasicCounters<MutableLong> fileCounters;
+
+  private final static Lock LOCK = new Lock();
 
   public final transient DefaultOutputPort<FileMetadata> filesMetadataOutput = new DefaultOutputPort<FileMetadata>();
   public final transient DefaultOutputPort<FileBlockMetadata> blocksMetadataOutput = new DefaultOutputPort<FileBlockMetadata>();
@@ -628,6 +630,7 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
    * @deprecated use {@link FileSplitterInput.TimeBasedDirectoryScanner}
    */
   @Deprecated
+  @DefaultSerializer(TimeBasedDirectoryScannerSerializer.class)
   public static class TimeBasedDirectoryScanner implements Component<Context.OperatorContext>, Runnable
   {
     private static long DEF_SCAN_INTERVAL_MILLIS = 5000;
@@ -954,20 +957,6 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
       this.scanIntervalMillis = scanIntervalMillis;
     }
 
-    private static class Lock
-    {
-    }
-
-    private class ModifiedTimesSerializer extends MapSerializer
-    {
-      @Override
-      public void write(Kryo kryo, Output output, Map map)
-      {
-        synchronized (lock) {
-          super.write(kryo, output, map);
-        }
-      }
-    }
   }
 
   /**
@@ -1032,6 +1021,27 @@ public class FileSplitter implements InputOperator, Operator.CheckpointListener
   public static enum Counters
   {
     PROCESSED_FILES
+  }
+
+  private static class Lock
+  {
+  }
+
+  public static class TimeBasedDirectoryScannerSerializer extends FieldSerializer<TimeBasedDirectoryScanner>
+  {
+
+    public TimeBasedDirectoryScannerSerializer(Kryo kryo, Class type)
+    {
+      super(kryo, type);
+    }
+
+    @Override
+    public void write(Kryo kryo, Output output, TimeBasedDirectoryScanner object)
+    {
+      synchronized (LOCK) {
+        super.write(kryo, output, object);
+      }
+    }
   }
 
   private static final Logger LOG = LoggerFactory.getLogger(FileSplitter.class);
