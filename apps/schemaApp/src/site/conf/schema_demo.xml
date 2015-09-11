@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<configuration>
+  <property>
+    <name>dt.operator.JdbcInput.port.outputPort.attr.TUPLE_CLASS</name>
+    <value>com.datatorrent.schemaApp.JdbcPojo</value>
+  </property>
+  <property>
+    <name>dt.operator.Deduper.port.inputPojo.attr.TUPLE_CLASS</name>
+    <value>com.datatorrent.schemaApp.JdbcPojo</value>
+  </property>
+  <property>
+    <name>dt.operator.JdbcOutput.port.input.attr.TUPLE_CLASS</name>
+    <value>com.datatorrent.schemaApp.JdbcPojo</value>
+  </property>
+</configuration>
