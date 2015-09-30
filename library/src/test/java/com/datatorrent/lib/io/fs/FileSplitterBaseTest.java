@@ -37,6 +37,9 @@ import com.datatorrent.lib.io.block.BlockMetadata;
 import com.datatorrent.lib.testbench.CollectorTestSink;
 import com.datatorrent.lib.util.TestUtils;
 
+/**
+ * Tests for {@link FileSplitterBase}
+ */
 public class FileSplitterBaseTest
 {
   @ClassRule
@@ -96,12 +99,12 @@ public class FileSplitterBaseTest
   {
     baseTestMeta.fileSplitter.beginWindow(1);
     for (String filePath : baseTestMeta.filePaths) {
-      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath, -1));
+      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath));
     }
     baseTestMeta.fileSplitter.endWindow();
     Assert.assertEquals("File metadata", 12, baseTestMeta.fileMetadataSink.collectedTuples.size());
     for (Object fileMetadata : baseTestMeta.fileMetadataSink.collectedTuples) {
-      FileSplitterInput.FileMetadata metadata = (FileSplitterInput.FileMetadata) fileMetadata;
+      FileSplitterInput.FileMetadata metadata = (FileSplitterInput.FileMetadata)fileMetadata;
       Assert.assertTrue("path: " + metadata.getFilePath(), baseTestMeta.filePaths.contains(metadata.getFilePath()));
       Assert.assertNotNull("name: ", metadata.getFileName());
     }
@@ -114,11 +117,11 @@ public class FileSplitterBaseTest
   {
     baseTestMeta.fileSplitter.beginWindow(1);
     for (String filePath : baseTestMeta.filePaths) {
-      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath, -1));
+      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath));
     }
     Assert.assertEquals("Blocks", 12, baseTestMeta.blockMetadataSink.collectedTuples.size());
     for (Object blockMetadata : baseTestMeta.blockMetadataSink.collectedTuples) {
-      BlockMetadata.FileBlockMetadata metadata = (BlockMetadata.FileBlockMetadata) blockMetadata;
+      BlockMetadata.FileBlockMetadata metadata = (BlockMetadata.FileBlockMetadata)blockMetadata;
       Assert.assertTrue("path: " + metadata.getFilePath(), baseTestMeta.filePaths.contains(metadata.getFilePath()));
     }
   }
@@ -129,7 +132,7 @@ public class FileSplitterBaseTest
     baseTestMeta.fileSplitter.setBlockSize(2L);
     baseTestMeta.fileSplitter.beginWindow(1);
     for (String filePath : baseTestMeta.filePaths) {
-      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath, -1));
+      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath));
     }
     Assert.assertEquals("Files", 12, baseTestMeta.fileMetadataSink.collectedTuples.size());
 
@@ -137,7 +140,7 @@ public class FileSplitterBaseTest
     for (int i = 0; i < 12; i++) {
       FileSplitterInput.FileMetadata fm = baseTestMeta.fileMetadataSink.collectedTuples.get(i);
       File testFile = new File(baseTestMeta.dataDirectory, fm.getFileName());
-      noOfBlocks += (int) Math.ceil(testFile.length() / (2 * 1.0));
+      noOfBlocks += (int)Math.ceil(testFile.length() / (2 * 1.0));
     }
     Assert.assertEquals("Blocks", noOfBlocks, baseTestMeta.blockMetadataSink.collectedTuples.size());
   }
@@ -148,7 +151,7 @@ public class FileSplitterBaseTest
     int noOfBlocks = 0;
     for (int i = 0; i < 12; i++) {
       File testFile = new File(baseTestMeta.dataDirectory, "file" + i + ".txt");
-      noOfBlocks += (int) Math.ceil(testFile.length() / (2 * 1.0));
+      noOfBlocks += (int)Math.ceil(testFile.length() / (2 * 1.0));
     }
 
     baseTestMeta.fileSplitter.setBlockSize(2L);
@@ -156,7 +159,7 @@ public class FileSplitterBaseTest
     baseTestMeta.fileSplitter.beginWindow(1);
 
     for (String filePath : baseTestMeta.filePaths) {
-      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath, -1));
+      baseTestMeta.fileSplitter.input.process(new FileSplitterInput.FileInfo(null, filePath));
     }
     baseTestMeta.fileSplitter.endWindow();
 
@@ -228,7 +231,7 @@ public class FileSplitterBaseTest
     public Response processStats(BatchedOperatorStats stats)
     {
       Stats.OperatorStats operatorStats = stats.getLastWindowedStats().get(stats.getLastWindowedStats().size() - 1);
-      count = (Integer) operatorStats.metrics.get("count");
+      count = (Integer)operatorStats.metrics.get("count");
       if (count == 12) {
         latch.countDown();
       }
@@ -251,7 +254,7 @@ public class FileSplitterBaseTest
       if (!done) {
         done = true;
         for (String file : filePaths) {
-          files.emit(new FileSplitterInput.FileInfo(file, System.currentTimeMillis()));
+          files.emit(new FileSplitterInput.FileInfo(null, file));
         }
       }
     }

@@ -34,7 +34,7 @@ import com.datatorrent.api.Operator;
 /**
  * A file splitter that receives its input from an upstream operator.
  */
-public class FileSplitterBase extends AbstractFileSplitter<FileSplitterBase.NoopScanner> implements Operator.IdleTimeHandler
+public class FileSplitterBase extends AbstractFileSplitter implements Operator.IdleTimeHandler
 {
   @NotNull
   protected String file;
@@ -46,7 +46,6 @@ public class FileSplitterBase extends AbstractFileSplitter<FileSplitterBase.Noop
   public FileSplitterBase()
   {
     fileInfos = new LinkedList<>();
-    scanner = new NoopScanner();
   }
 
   public final transient DefaultInputPort<FileInfo> input = new DefaultInputPort<FileInfo>()
@@ -55,7 +54,7 @@ public class FileSplitterBase extends AbstractFileSplitter<FileSplitterBase.Noop
     public void process(FileInfo fileInfo)
     {
       fileInfos.add(fileInfo);
-      startProcess();
+      FileSplitterBase.this.process();
     }
   };
 
@@ -76,25 +75,20 @@ public class FileSplitterBase extends AbstractFileSplitter<FileSplitterBase.Noop
     return FileSystem.newInstance(new Path(file).toUri(), new Configuration());
   }
 
-  protected void startProcess()
+  @Override
+  protected FileInfo getFileInfo()
   {
-    if (blockMetadataIterator != null && blockCount < blocksThreshold) {
-      emitBlockMetadata();
+    if (fileInfos.size() > 0) {
+      return fileInfos.remove();
     }
-
-    FileInfo fileInfo;
-    while (blockCount < blocksThreshold && fileInfos.size() > 0 && (fileInfo = fileInfos.remove()) != null) {
-      if (!process(fileInfo)) {
-        break;
-      }
-    }
+    return null;
   }
 
   @Override
   public void handleIdleTime()
   {
     if (blockCount < blocksThreshold && (blockMetadataIterator != null || fileInfos.size() > 0)) {
-      startProcess();
+      process();
     } else {
       /* nothing to do here, so sleep for a while to avoid busy loop */
       try {
@@ -144,25 +138,5 @@ public class FileSplitterBase extends AbstractFileSplitter<FileSplitterBase.Noop
   public String getFile()
   {
     return file;
-  }
-
-  public static class NoopScanner implements AbstractFileSplitter.Scanner
-  {
-    @Override
-    public FileInfo pollFile()
-    {
-      throw new UnsupportedOperationException("not supported");
-    }
-
-    @Override
-    public void setup(Context.OperatorContext context)
-    {
-    }
-
-    @Override
-    public void teardown()
-    {
-    }
-
   }
 }

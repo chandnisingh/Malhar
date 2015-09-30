@@ -18,10 +18,7 @@ package com.datatorrent.lib.io.fs;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -29,8 +26,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javax.annotation.Nullable;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Size;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
@@ -39,10 +38,6 @@ import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.esotericsoftware.kryo.DefaultSerializer;
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Output;
-import com.esotericsoftware.kryo.serializers.FieldSerializer;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
@@ -51,10 +46,12 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
+import com.datatorrent.api.Component;
 import com.datatorrent.api.Context;
 import com.datatorrent.api.InputOperator;
 import com.datatorrent.api.Operator;
 import com.datatorrent.api.annotation.OperatorAnnotation;
+import com.datatorrent.api.annotation.Stateless;
 
 import com.datatorrent.lib.io.IdempotentStorageManager;
 import com.datatorrent.netlet.util.DTThrowable;
@@ -72,36 +69,40 @@ import com.datatorrent.netlet.util.DTThrowable;
  * @since 2.0.0
  */
 @OperatorAnnotation(checkpointableWithinAppWindow = false)
-public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.TimeBasedDirectoryScanner> implements InputOperator,
-  Operator.CheckpointListener
+public class FileSplitterInput extends AbstractFileSplitter implements InputOperator, Operator.CheckpointListener
 {
   @NotNull
-  protected IdempotentStorageManager idempotentStorageManager;
+  private IdempotentStorageManager idempotentStorageManager;
+  @NotNull
+  protected final transient LinkedList<ScannedFileInfo> currentWindowRecoveryState;
 
   @NotNull
-  protected final transient LinkedList<FileInfo> currentWindowRecoveryState;
+  private TimeBasedDirectoryScanner scanner;
+  @NotNull
+  private Map<String, Long> referenceTimes;
 
-  private final static Lock LOCK = new Lock();
+  private transient long sleepMillis;
 
   public FileSplitterInput()
   {
     super();
     currentWindowRecoveryState = Lists.newLinkedList();
-    scanner = new TimeBasedDirectoryScanner();
     idempotentStorageManager = new IdempotentStorageManager.FSIdempotentStorageManager();
+    referenceTimes = Maps.newHashMap();
+    scanner = new TimeBasedDirectoryScanner();
   }
 
   @Override
   public void setup(Context.OperatorContext context)
   {
-    Preconditions.checkArgument(!scanner.files.isEmpty(), "empty files");
-    super.setup(context);
+    sleepMillis = context.getValue(Context.OperatorContext.SPIN_MILLIS);
+    scanner.setup(context);
     idempotentStorageManager.setup(context);
+    super.setup(context);
 
-    if (context.getValue(Context.OperatorContext.ACTIVATION_WINDOW_ID) < idempotentStorageManager.getLargestRecoveryWindow()) {
-      blockMetadataIterator = null;
-    } else {
-      scanner.startScanning();
+    long largestRecoveryWindow = idempotentStorageManager.getLargestRecoveryWindow();
+    if (largestRecoveryWindow == Stateless.WINDOW_ID || context.getValue(Context.OperatorContext.ACTIVATION_WINDOW_ID) > largestRecoveryWindow) {
+      scanner.startScanning(Collections.unmodifiableMap(referenceTimes));
     }
   }
 
@@ -118,8 +119,7 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
   {
     try {
       @SuppressWarnings("unchecked")
-      LinkedList<FileInfo> recoveredData = (LinkedList<FileInfo>)idempotentStorageManager.load(operatorId,
-        windowId);
+      LinkedList<ScannedFileInfo> recoveredData = (LinkedList<ScannedFileInfo>)idempotentStorageManager.load(operatorId, windowId);
       if (recoveredData == null) {
         //This could happen when there are multiple physical instances and one of them is ahead in processing windows.
         return;
@@ -127,17 +127,12 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
       if (blockMetadataIterator != null) {
         emitBlockMetadata();
       }
-      for (FileInfo info : recoveredData) {
-        if (info.directoryPath != null) {
-          scanner.lastModifiedTimes.put(info.directoryPath, info.modifiedTime);
-        } else { //no directory
-          scanner.lastModifiedTimes.put(info.relativeFilePath, info.modifiedTime);
-        }
+      for (ScannedFileInfo info : recoveredData) {
+        updateReferenceTimes(info);
         FileMetadata fileMetadata = buildFileMetadata(info);
-        fileCounters.getCounter(Counters.PROCESSED_FILES).increment();
         filesMetadataOutput.emit(fileMetadata);
-        blockMetadataIterator = new BlockMetadataIterator((AbstractFileSplitter)this, fileMetadata, blockSize);
 
+        blockMetadataIterator = new BlockMetadataIterator(this, fileMetadata, blockSize);
         if (!emitBlockMetadata()) {
           break;
         }
@@ -146,15 +141,8 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
       throw new RuntimeException("replay", e);
     }
     if (windowId == idempotentStorageManager.getLargestRecoveryWindow()) {
-      scanner.startScanning();
+      scanner.startScanning(Collections.unmodifiableMap(referenceTimes));
     }
-  }
-
-  @Override
-  protected boolean process(FileInfo fileInfo)
-  {
-    currentWindowRecoveryState.add(fileInfo);
-    return super.process(fileInfo);
   }
 
   @Override
@@ -168,16 +156,34 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     if ((throwable = scanner.atomicThrowable.get()) != null) {
       DTThrowable.rethrow(throwable);
     }
-    if (blockMetadataIterator != null && blockCount < blocksThreshold) {
-      emitBlockMetadata();
-    }
-
-    FileInfo fileInfo;
-    while (blockCount < blocksThreshold && (fileInfo = scanner.pollFile()) != null) {
-      if (!process(fileInfo)) {
-        break;
+    if (blockMetadataIterator == null && scanner.discoveredFiles.isEmpty()) {
+      try {
+        Thread.sleep(sleepMillis);
+      } catch (InterruptedException e) {
+        throw new RuntimeException("waiting for work", e);
       }
     }
+    process();
+  }
+
+  @Override
+  protected FileInfo getFileInfo()
+  {
+    return scanner.pollFile();
+  }
+
+  @Override
+  protected boolean processFileInfo(FileInfo fileInfo)
+  {
+    ScannedFileInfo scannedFileInfo = (ScannedFileInfo)fileInfo;
+    currentWindowRecoveryState.add(scannedFileInfo);
+    updateReferenceTimes(scannedFileInfo);
+    return super.processFileInfo(fileInfo);
+  }
+
+  protected void updateReferenceTimes(ScannedFileInfo fileInfo)
+  {
+    referenceTimes.put(fileInfo.getFilePath(), fileInfo.modifiedTime);
   }
 
   @Override
@@ -191,7 +197,6 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
       }
     }
     currentWindowRecoveryState.clear();
-    super.endWindow();
   }
 
   @Override
@@ -221,6 +226,12 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     }
   }
 
+  @Override
+  public void teardown()
+  {
+    scanner.teardown();
+  }
+
   public void setIdempotentStorageManager(IdempotentStorageManager idempotentStorageManager)
   {
     this.idempotentStorageManager = idempotentStorageManager;
@@ -231,29 +242,35 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     return this.idempotentStorageManager;
   }
 
-  @DefaultSerializer(TimeBasedDirectoryScannerSerializer.class)
-  public static class TimeBasedDirectoryScanner implements Runnable, AbstractFileSplitter.Scanner
+  public void setScanner(TimeBasedDirectoryScanner scanner)
+  {
+    this.scanner = scanner;
+  }
+
+  public TimeBasedDirectoryScanner getScanner()
+  {
+    return this.scanner;
+  }
+
+  public static class TimeBasedDirectoryScanner implements Runnable, Component<Context.OperatorContext>
   {
     private static long DEF_SCAN_INTERVAL_MILLIS = 5000;
 
-    protected boolean recursive;
+    private boolean recursive;
 
-    protected transient volatile boolean trigger;
-
-    @NotNull
-    protected final Map<String, Long> lastModifiedTimes;
+    private transient volatile boolean trigger;
 
     @NotNull
-    protected final Set<String> files;
+    @Size(min = 1)
+    private final Set<String> files;
 
     @Min(0)
-    protected long scanIntervalMillis;
-
+    private long scanIntervalMillis;
     private String filePatternRegularExp;
 
     protected transient long lastScanMillis;
     protected transient FileSystem fs;
-    protected final transient LinkedBlockingDeque<FileInfo> discoveredFiles;
+    protected final transient LinkedBlockingDeque<ScannedFileInfo> discoveredFiles;
     protected final transient ExecutorService scanService;
     protected final transient AtomicReference<Throwable> atomicThrowable;
 
@@ -261,10 +278,13 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     protected final transient HashSet<String> ignoredFiles;
     protected transient Pattern regex;
     protected transient long sleepMillis;
+    protected transient Map<String, Long> referenceTimes;
+
+    private transient ScannedFileInfo lastScannedInfo;
+    private transient int numDiscoveredPerIteration;
 
     public TimeBasedDirectoryScanner()
     {
-      lastModifiedTimes = Maps.newHashMap();
       recursive = true;
       scanIntervalMillis = DEF_SCAN_INTERVAL_MILLIS;
       files = Sets.newLinkedHashSet();
@@ -288,8 +308,9 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
       }
     }
 
-    public void startScanning()
+    protected void startScanning(Map<String, Long> referenceTimes)
     {
+      this.referenceTimes = Preconditions.checkNotNull(referenceTimes);
       scanService.submit(this);
     }
 
@@ -316,14 +337,15 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
       running = true;
       try {
         while (running) {
-          if (trigger || (System.currentTimeMillis() - scanIntervalMillis >= lastScanMillis)) {
-            synchronized (LOCK) {  //pauses this thread while kryo is serializing lastModifiedTimes
-              trigger = false;
-              for (String afile : files) {
-                scan(new Path(afile), null);
-              }
-              scanComplete();
+          if ((trigger || (System.currentTimeMillis() - scanIntervalMillis >= lastScanMillis)) &&
+            (lastScannedInfo == null || referenceTimes.get(lastScannedInfo.getFilePath()) != null)) {
+            trigger = false;
+            lastScannedInfo = null;
+            numDiscoveredPerIteration = 0;
+            for (String afile : files) {
+              scan(new Path(afile), null);
             }
+            scanIterationComplete();
           } else {
             Thread.sleep(sleepMillis);
           }
@@ -339,13 +361,9 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     /**
      * Operations that need to be done once a scan is complete.
      */
-    protected void scanComplete()
+    protected void scanIterationComplete()
     {
-      LOG.debug("scan complete {}", lastScanMillis);
-      FileInfo fileInfo = discoveredFiles.peekLast();
-      if (fileInfo != null) {
-        fileInfo.lastFileOfScan = true;
-      }
+      LOG.debug("scan complete {} {}", lastScanMillis, numDiscoveredPerIteration);
       lastScanMillis = System.currentTimeMillis();
     }
 
@@ -356,22 +374,13 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
         String parentPathStr = filePath.toUri().getPath();
 
         LOG.debug("scan {}", parentPathStr);
-        Long oldModificationTime = lastModifiedTimes.get(parentPathStr);
-        lastModifiedTimes.put(parentPathStr, parentStatus.getModificationTime());
-
-        if (skipFile(filePath, parentStatus.getModificationTime(), oldModificationTime)) {
-          return;
-        }
-
-        LOG.debug("scan {}", filePath.toUri().getPath());
 
         FileStatus[] childStatuses = fs.listStatus(filePath);
-
         for (FileStatus status : childStatuses) {
           Path childPath = status.getPath();
-          String childPathStr = childPath.toUri().getPath();
+          ScannedFileInfo info = createScannedFileInfo(filePath, parentStatus, childPath, status, rootPath);
 
-          if (skipFile(childPath, status.getModificationTime(), oldModificationTime)) {
+          if (skipFile(childPath, status.getModificationTime(), referenceTimes.get(info.getFilePath()))) {
             continue;
           }
 
@@ -379,28 +388,15 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
             if (recursive) {
               scan(childPath, rootPath == null ? parentStatus.getPath() : rootPath);
             }
-            //a directory is treated like any other discovered file.
           }
 
+          String childPathStr = childPath.toUri().getPath();
           if (ignoredFiles.contains(childPathStr)) {
             continue;
           }
-
           if (acceptFile(childPathStr)) {
             LOG.debug("found {}", childPathStr);
-
-            FileInfo info;
-            if (rootPath == null) {
-              info = parentStatus.isDirectory() ?
-                new FileInfo(parentPathStr, childPath.getName(), parentStatus.getModificationTime()) :
-                new FileInfo(null, childPathStr, parentStatus.getModificationTime());
-            } else {
-              URI relativeChildURI = rootPath.toUri().relativize(childPath.toUri());
-              info = new FileInfo(rootPath.toUri().getPath(), relativeChildURI.getPath(),
-                parentStatus.getModificationTime());
-            }
-
-            discoveredFiles.add(info);
+            processDiscoveredFile(info);
           } else {
             // don't look at it again
             ignoredFiles.add(childPathStr);
@@ -413,6 +409,27 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
       }
     }
 
+    protected void processDiscoveredFile(ScannedFileInfo info)
+    {
+      numDiscoveredPerIteration++;
+      lastScannedInfo = info;
+      discoveredFiles.add(info);
+    }
+
+    protected ScannedFileInfo createScannedFileInfo(Path parentPath, FileStatus parentStatus, Path childPath, @SuppressWarnings("UnusedParameters") FileStatus childStatus, Path rootPath)
+    {
+      ScannedFileInfo info;
+      if (rootPath == null) {
+        info = parentStatus.isDirectory() ?
+          new ScannedFileInfo(parentPath.toUri().getPath(), childPath.getName(), parentStatus.getModificationTime()) :
+          new ScannedFileInfo(null, childPath.toUri().getPath(), parentStatus.getModificationTime());
+      } else {
+        URI relativeChildURI = rootPath.toUri().relativize(childPath.toUri());
+        info = new ScannedFileInfo(rootPath.toUri().getPath(), relativeChildURI.getPath(), parentStatus.getModificationTime());
+      }
+      return info;
+    }
+
     /**
      * Skips file/directory based on their modification time.<br/>
      *
@@ -422,8 +439,8 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
      * @return true to skip; false otherwise.
      * @throws IOException
      */
-    protected boolean skipFile(@SuppressWarnings("unused") @NotNull Path path, @NotNull Long modificationTime,
-                               Long lastModificationTime) throws IOException
+    protected static boolean skipFile(@SuppressWarnings("unused") @NotNull Path path, @NotNull Long modificationTime,
+                                      Long lastModificationTime) throws IOException
     {
       return (!(lastModificationTime == null || modificationTime > lastModificationTime));
     }
@@ -448,6 +465,11 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     public FileInfo pollFile()
     {
       return discoveredFiles.poll();
+    }
+
+    protected int getNumDiscoveredPerIteration()
+    {
+      return numDiscoveredPerIteration;
     }
 
     /**
@@ -552,24 +574,23 @@ public class FileSplitterInput extends AbstractFileSplitter<FileSplitterInput.Ti
     }
   }
 
-  private static class Lock
+  /**
+   * File info created for files discovered by scanner
+   */
+  public static class ScannedFileInfo extends AbstractFileSplitter.FileInfo
   {
-  }
+    protected final long modifiedTime;
 
-  public static class TimeBasedDirectoryScannerSerializer extends FieldSerializer<TimeBasedDirectoryScanner>
-  {
-
-    public TimeBasedDirectoryScannerSerializer(Kryo kryo, Class type)
+    protected ScannedFileInfo()
     {
-      super(kryo, type);
+      super();
+      modifiedTime = -1;
     }
 
-    @Override
-    public void write(Kryo kryo, Output output, TimeBasedDirectoryScanner object)
+    public ScannedFileInfo(@Nullable String directoryPath, @NotNull String relativeFilePath, long modifiedTime)
     {
-      synchronized (LOCK) {
-        super.write(kryo, output, object);
-      }
+      super(directoryPath, relativeFilePath);
+      this.modifiedTime = modifiedTime;
     }
   }
 

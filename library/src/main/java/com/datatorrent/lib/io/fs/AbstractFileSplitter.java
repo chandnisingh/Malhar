@@ -22,8 +22,6 @@ import javax.annotation.Nullable;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 
-import org.apache.commons.lang.mutable.MutableLong;
-import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
@@ -31,21 +29,17 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 
-import com.datatorrent.api.Component;
+import com.datatorrent.api.AutoMetric;
 import com.datatorrent.api.Context;
 import com.datatorrent.api.DefaultOutputPort;
 
 import com.datatorrent.common.util.BaseOperator;
-import com.datatorrent.lib.counters.BasicCounters;
 import com.datatorrent.lib.io.block.BlockMetadata;
-import com.datatorrent.netlet.util.DTThrowable;
 
 /**
  * An abstract File Splitter.
- *
- * @param <SCANNER> type of scanner
  */
-public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.Scanner> extends BaseOperator
+public abstract class AbstractFileSplitter extends BaseOperator
 {
   protected Long blockSize;
   private int sequenceNo;
@@ -59,23 +53,20 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
 
   protected transient long blockCount;
 
-  protected Iterator<BlockMetadata.FileBlockMetadata> blockMetadataIterator;
-
-  @NotNull
-  protected SCANNER scanner;
+  protected BlockMetadataIterator blockMetadataIterator;
 
   protected transient int operatorId;
   protected transient Context.OperatorContext context;
   protected transient long currentWindowId;
 
-  protected final BasicCounters<MutableLong> fileCounters;
+  @AutoMetric
+  protected int filesProcessed;
 
   public final transient DefaultOutputPort<FileMetadata> filesMetadataOutput = new DefaultOutputPort<>();
   public final transient DefaultOutputPort<BlockMetadata.FileBlockMetadata> blocksMetadataOutput = new DefaultOutputPort<>();
 
   public AbstractFileSplitter()
   {
-    fileCounters = new BasicCounters<>(MutableLong.class);
     blocksThreshold = Integer.MAX_VALUE;
   }
 
@@ -86,43 +77,49 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
 
     operatorId = context.getId();
     this.context = context;
-
-    fileCounters.setCounter(Counters.PROCESSED_FILES, new MutableLong());
-
-    scanner.setup(context);
-
+    currentWindowId = context.getValue(Context.OperatorContext.ACTIVATION_WINDOW_ID);
     if (blockSize == null) {
       blockSize = getDefaultBlockSize();
     }
   }
 
   @Override
-  public void teardown()
-  {
-    try {
-      scanner.teardown();
-    } catch (Throwable t) {
-      DTThrowable.rethrow(t);
-    }
-  }
-
-  @Override
   public void beginWindow(long windowId)
   {
+    filesProcessed = 0;
     blockCount = 0;
     currentWindowId = windowId;
   }
+
+  protected void process()
+  {
+    if (blockMetadataIterator != null && blockCount < blocksThreshold) {
+      emitBlockMetadata();
+    }
+
+    FileInfo fileInfo;
+    while (blockCount < blocksThreshold && (fileInfo = getFileInfo()) != null) {
+      if (!processFileInfo(fileInfo)) {
+        break;
+      }
+    }
+  }
+
+  /**
+   * @return {@link FileInfo}
+   */
+  protected abstract FileInfo getFileInfo();
 
   /**
    * @param fileInfo file info
    * @return true if blocks threshold is reached; false otherwise
    */
-  protected boolean process(FileInfo fileInfo)
+  protected boolean processFileInfo(FileInfo fileInfo)
   {
     try {
       FileMetadata fileMetadata = buildFileMetadata(fileInfo);
       filesMetadataOutput.emit(fileMetadata);
-      fileCounters.getCounter(Counters.PROCESSED_FILES).increment();
+      filesProcessed++;
       if (!fileMetadata.isDirectory()) {
         blockMetadataIterator = new BlockMetadataIterator(this, fileMetadata, blockSize);
         if (!emitBlockMetadata()) {
@@ -130,19 +127,10 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
           return false;
         }
       }
-      if (fileInfo.lastFileOfScan) {
-        return false;
-      }
+      return true;
     } catch (IOException e) {
       throw new RuntimeException("creating metadata", e);
     }
-    return true;
-  }
-
-  @Override
-  public void endWindow()
-  {
-    context.setCounters(fileCounters);
   }
 
   /**
@@ -162,14 +150,34 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
   }
 
   /**
+   * Builds block metadata
+   *
+   * @param pos                 offset of the block
+   * @param lengthOfFileInBlock length of the block in file
+   * @param blockNumber         block number
+   * @param fileMetadata        file metadata
+   * @param isLast              last block of the file
+   * @return
+   */
+  protected BlockMetadata.FileBlockMetadata buildBlockMetadata(long pos, long lengthOfFileInBlock, int blockNumber,
+                                                               FileMetadata fileMetadata, boolean isLast)
+  {
+    BlockMetadata.FileBlockMetadata fileBlockMetadata = createBlockMetadata(fileMetadata);
+    fileBlockMetadata.setBlockId(fileMetadata.getBlockIds()[blockNumber - 1]);
+    fileBlockMetadata.setOffset(pos);
+    fileBlockMetadata.setLength(lengthOfFileInBlock);
+    fileBlockMetadata.setLastBlock(isLast);
+    fileBlockMetadata.setPreviousBlockId(blockNumber == 1 ? -1 : fileMetadata.getBlockIds()[blockNumber - 2]);
+
+    return fileBlockMetadata;
+  }
+
+  /**
    * Can be overridden for creating block metadata of a type that extends {@link BlockMetadata.FileBlockMetadata}
    */
-  protected BlockMetadata.FileBlockMetadata createBlockMetadata(long pos, long lengthOfFileInBlock, int blockNumber,
-                                                                FileMetadata fileMetadata, boolean isLast)
+  protected BlockMetadata.FileBlockMetadata createBlockMetadata(FileMetadata fileMetadata)
   {
-    return new BlockMetadata.FileBlockMetadata(fileMetadata.getFilePath(), fileMetadata.getBlockIds()[blockNumber - 1], pos,
-      lengthOfFileInBlock, isLast, blockNumber == 1 ? -1 : fileMetadata.getBlockIds()[blockNumber - 2]);
-
+    return new BlockMetadata.FileBlockMetadata(fileMetadata.getFilePath());
   }
 
   /**
@@ -192,7 +200,7 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
     fileMetadata.setFileLength(status.getLen());
 
     if (!status.isDirectory()) {
-      int noOfBlocks = (int) ((status.getLen() / blockSize) + (((status.getLen() % blockSize) == 0) ? 0 : 1));
+      int noOfBlocks = (int)((status.getLen() / blockSize) + (((status.getLen() % blockSize) == 0) ? 0 : 1));
       if (fileMetadata.getDataOffset() >= status.getLen()) {
         noOfBlocks = 0;
       }
@@ -217,7 +225,7 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
   {
     // block ids are 32 bits of operatorId | 32 bits of sequence number
     long[] blockIds = new long[fileMetadata.getNumberOfBlocks()];
-    long longLeftSide = ((long) operatorId) << 32;
+    long longLeftSide = ((long)operatorId) << 32;
     for (int i = 0; i < fileMetadata.getNumberOfBlocks(); i++) {
       blockIds[i] = longLeftSide | sequenceNo++ & 0xFFFFFFFFL;
     }
@@ -259,29 +267,10 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
     return blocksThreshold;
   }
 
-  public void setScanner(SCANNER scanner)
-  {
-    this.scanner = scanner;
-  }
-
-  public SCANNER getScanner()
-  {
-    return this.scanner;
-  }
-
-  @InterfaceStability.Evolving
-  interface Scanner extends Component<Context.OperatorContext>
-  {
-    /**
-     * @return information of a file discovered
-     */
-    FileInfo pollFile();
-  }
-
   /**
    * An {@link Iterator} for Block-Metadatas of a file.
    */
-  public static class BlockMetadataIterator implements Iterator<BlockMetadata.FileBlockMetadata>
+  protected static class BlockMetadataIterator implements Iterator<BlockMetadata.FileBlockMetadata>
   {
     private final FileMetadata fileMetadata;
     private final long blockSize;
@@ -289,7 +278,7 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
     private long pos;
     private int blockNumber;
 
-    private final AbstractFileSplitter splitter;
+    private final transient AbstractFileSplitter splitter;
 
     protected BlockMetadataIterator()
     {
@@ -299,17 +288,7 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
       splitter = null;
     }
 
-    public BlockMetadataIterator(AbstractFileSplitter splitter, FileMetadata fileMetadata, long blockSize)
-    {
-      this.splitter = splitter;
-      this.fileMetadata = fileMetadata;
-      this.blockSize = blockSize;
-      this.pos = fileMetadata.getDataOffset();
-      this.blockNumber = 0;
-    }
-
-    @Deprecated
-    public BlockMetadataIterator(FileSplitterInput splitter, FileMetadata fileMetadata, long blockSize)
+    protected BlockMetadataIterator(AbstractFileSplitter splitter, FileMetadata fileMetadata, long blockSize)
     {
       this.splitter = splitter;
       this.fileMetadata = fileMetadata;
@@ -333,7 +312,7 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
       }
       boolean isLast = length >= fileMetadata.getFileLength();
       long lengthOfFileInBlock = isLast ? fileMetadata.getFileLength() : length;
-      BlockMetadata.FileBlockMetadata fileBlock = splitter.createBlockMetadata(pos, lengthOfFileInBlock, blockNumber, fileMetadata, isLast);
+      BlockMetadata.FileBlockMetadata fileBlock = splitter.buildBlockMetadata(pos, lengthOfFileInBlock, blockNumber, fileMetadata, isLast);
       pos = lengthOfFileInBlock;
       return fileBlock;
     }
@@ -509,32 +488,23 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
   }
 
   /**
-   * A class that represents the file discovered by time-based scanner.
+   * A class that encapsulates file path.
    */
-  protected static class FileInfo
+  public static class FileInfo
   {
     protected final String directoryPath;
     protected final String relativeFilePath;
-    protected final long modifiedTime;
-    protected transient boolean lastFileOfScan;
 
-    private FileInfo()
+    protected FileInfo()
     {
       directoryPath = null;
       relativeFilePath = null;
-      modifiedTime = -1;
     }
 
-    protected FileInfo(String filePath, long modifiedTime)
-    {
-      this(null, filePath, modifiedTime);
-    }
-
-    protected FileInfo(@Nullable String directoryPath, @NotNull String relativeFilePath, long modifiedTime)
+    public FileInfo(@Nullable String directoryPath, @NotNull String relativeFilePath)
     {
       this.directoryPath = directoryPath;
       this.relativeFilePath = relativeFilePath;
-      this.modifiedTime = modifiedTime;
     }
 
     /**
@@ -563,16 +533,6 @@ public abstract class AbstractFileSplitter<SCANNER extends AbstractFileSplitter.
       }
       return new Path(directoryPath, relativeFilePath).toUri().getPath();
     }
-
-    public boolean isLastFileOfScan()
-    {
-      return lastFileOfScan;
-    }
-  }
-
-  public enum Counters
-  {
-    PROCESSED_FILES
   }
 
   private static final Logger LOG = LoggerFactory.getLogger(AbstractFileSplitter.class);

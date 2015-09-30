@@ -1,11 +1,11 @@
-/*
- * Copyright (c) 2015 DataTorrent, Inc.
+/**
+ * Copyright (C) 2015 DataTorrent, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *         http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,13 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datatorrent.lib.appdata.gpo;
+package com.datatorrent.demos.wordcount;
 
-/**
- * @since 3.1.0
- */
+// a single (word, frequency) pair
+public class WCPair {
+  public String word;
+  public int freq;
 
-public interface SerdeObjectPayloadFix
-{
-  public void fix(Object[] objects);
+  public WCPair() {}
+
+  public WCPair(String w, int f) {
+    word = w;
+    freq = f;
+  }
+  
+  @Override
+  public String toString() {
+    return String.format("(%s, %d)", word, freq);
+  }
 }
