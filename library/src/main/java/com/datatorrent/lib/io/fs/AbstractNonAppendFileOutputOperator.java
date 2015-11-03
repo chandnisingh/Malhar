@@ -51,6 +51,7 @@ public abstract class AbstractNonAppendFileOutputOperator<INPUT> extends Abstrac
       FSDataInputStream fsIn = fs.open(appendTmpFile);
       FSDataOutputStream fsOut = fs.create(filepath);
       IOUtils.copy(fsIn, fsOut);
+      flush(fsOut);
       return fsOut;
     }
     return super.openStream(filepath, false);
