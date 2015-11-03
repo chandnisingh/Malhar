@@ -1,17 +1,20 @@
-/*
- * Copyright (c) 2015 DataTorrent, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package com.datatorrent.lib.appdata.gpo;
 
@@ -1745,10 +1748,25 @@ public class GPOUtils
     return hashCode;
   }
 
+  /**
+   * This function computes the hashcode of a {@link GPOMutable} based on a specified subset of its data.
+   * <br/>
+   * <br/>
+   * <b>Note:</b> In some cases a {@link GPOMutable} object contains a field which is bucketed. In the case of
+   * bucketed fields, you may want to preserve the original value of the field, but only use the bucketed value
+   * of the field for computing a hashcode. In order to do this you can store the original value of {@link GPOMutable}'s
+   * field before calling this function, and replace it with the bucketed value. Then after the hashcode is computed, the
+   * original value of the field can be restored.
+   *
+   * @param gpo The {@link GPOMutable} to compute a hashcode for.
+   * @param indexSubset The subset of the {@link GPOMutable} used to compute the hashcode.
+   * @return The hashcode for the given {@link GPOMutable} computed from the specified subset of its data.
+   */
   public static int indirectHashcode(GPOMutable gpo,
                                      IndexSubset indexSubset)
   {
-    int hashCode = 0;
+    int hashCode = 7;
+    final int hashMultiplier = 23;
 
     {
       String[] stringArray = gpo.getFieldsString();
@@ -1760,7 +1778,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= stringArray[srcIndex[index]].hashCode();
+          hashCode = hashMultiplier * hashCode + stringArray[srcIndex[index]].hashCode();
         }
       }
     }
@@ -1775,7 +1793,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= booleanArray[srcIndex[index]] ? 1: 0;
+          hashCode = hashMultiplier * hashCode + (booleanArray[srcIndex[index]] ? 1: 0);
         }
       }
     }
@@ -1790,7 +1808,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= Character.getNumericValue(charArray[srcIndex[index]]);
+          hashCode = hashMultiplier * hashCode + Character.getNumericValue(charArray[srcIndex[index]]);
         }
       }
     }
@@ -1805,7 +1823,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= byteArray[srcIndex[index]];
+          hashCode = hashMultiplier * hashCode + byteArray[srcIndex[index]];
         }
       }
     }
@@ -1820,7 +1838,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= shortArray[srcIndex[index]];
+          hashCode = hashMultiplier * hashCode + shortArray[srcIndex[index]];
         }
       }
     }
@@ -1835,7 +1853,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= integerArray[srcIndex[index]];
+          hashCode = hashMultiplier * hashCode + integerArray[srcIndex[index]];
         }
       }
     }
@@ -1850,7 +1868,9 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= longArray[srcIndex[index]];
+          long element = longArray[srcIndex[index]];
+          int elementHash = (int) (element ^ (element >>> 32));
+          hashCode = hashMultiplier * hashCode + elementHash;
         }
       }
     }
@@ -1865,7 +1885,7 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= Float.floatToIntBits(floatArray[srcIndex[index]]);
+          hashCode = hashMultiplier * hashCode + Float.floatToIntBits(floatArray[srcIndex[index]]);
         }
       }
     }
@@ -1880,7 +1900,9 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= Double.doubleToLongBits(doubleArray[srcIndex[index]]);
+          long element = Double.doubleToLongBits(doubleArray[srcIndex[index]]);
+          int elementHash = (int) (element ^ (element >>> 32));
+          hashCode = hashMultiplier * hashCode + elementHash;
         }
       }
     }
@@ -1895,7 +1917,8 @@ public class GPOUtils
           if(srcIndex[index] == -1) {
             continue;
           }
-          hashCode ^= objectArray[srcIndex[index]].hashCode();
+
+          hashCode = hashMultiplier * hashCode + objectArray[srcIndex[index]].hashCode();
         }
       }
     }

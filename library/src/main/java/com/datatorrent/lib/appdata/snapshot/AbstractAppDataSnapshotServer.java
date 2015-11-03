@@ -1,23 +1,27 @@
-/*
- * Copyright (c) 2015 DataTorrent, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
  *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package com.datatorrent.lib.appdata.snapshot;
 
 import java.io.IOException;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import javax.validation.constraints.NotNull;
 
@@ -89,9 +93,10 @@ public abstract class AbstractAppDataSnapshotServer<INPUT_EVENT> implements Oper
    */
   private List<GPOMutable> currentData = Lists.newArrayList();
   private EmbeddableQueryInfoProvider<String> embeddableQueryInfoProvider;
+  private final transient ConcurrentLinkedQueue<SchemaResult> schemaQueue = new ConcurrentLinkedQueue<>();
 
   @AppData.ResultPort
-  public final transient DefaultOutputPort<String> queryResult = new DefaultOutputPort<String>();
+  public final transient DefaultOutputPort<String> queryResult = new DefaultOutputPort<>();
 
   @AppData.QueryPort
   @InputPortFieldAnnotation(optional=true)
@@ -115,9 +120,8 @@ public abstract class AbstractAppDataSnapshotServer<INPUT_EVENT> implements Oper
         SchemaResult schemaResult = schemaRegistry.getSchemaResult((SchemaQuery)query);
 
         if (schemaResult != null) {
-          String schemaResultJSON = resultSerializerFactory.serialize(schemaResult);
-          LOG.debug("emitting {}", schemaResultJSON);
-          queryResult.emit(schemaResultJSON);
+          LOG.debug("queueing {}", schemaResult);
+          schemaQueue.add(schemaResult);
         }
       } else if (query instanceof DataQuerySnapshot) {
         queryProcessor.enqueue((DataQuerySnapshot)query, null, null);
@@ -205,12 +209,22 @@ public abstract class AbstractAppDataSnapshotServer<INPUT_EVENT> implements Oper
     }
 
     {
-      Result result = null;
+      Result result;
 
       while((result = queryProcessor.process()) != null) {
         String resultJSON = resultSerializerFactory.serialize(result);
         LOG.debug("emitting {}", resultJSON);
         queryResult.emit(resultJSON);
+      }
+    }
+
+    {
+      SchemaResult schemaResult;
+
+      while ((schemaResult = schemaQueue.poll()) != null) {
+        String schemaResultJSON = resultSerializerFactory.serialize(schemaResult);
+        LOG.debug("emitting {}", schemaResultJSON);
+        queryResult.emit(schemaResultJSON);
       }
     }
 

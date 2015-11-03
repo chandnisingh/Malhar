@@ -1,34 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>com.datatorrent</groupId>
-    <artifactId>dt-framework</artifactId>
-    <version>3.2.0-SNAPSHOT</version>
+    <groupId>org.apache.apex</groupId>
+    <artifactId>apex</artifactId>
+    <version>3.2.0-incubating</version>
   </parent>
 
+  <groupId>org.apache.apex</groupId>
   <artifactId>malhar</artifactId>
-  <version>3.2.0-SNAPSHOT</version>
+  <version>3.3.0-incubating-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>Malhar Open Source</name>
-  <url>https://www.datatorrent.com/</url>
+  <name>Apache Apex Malhar</name>
+  <url>http://apex.apache.org</url>
 
   <licenses>
     <license>
-      <name>Copyright &copy; 2015 DataTorrent, Inc.</name>
-      <url>http://www.datatorrent.com/</url>
+      <name>The Apache Software License, Version 2.0</name>
+      <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
     </license>
   </licenses>
-
-  <!-- repository to provide the DataTorrent artifacts -->
-  <repositories>
-    <repository>
-      <id>datatorrent</id>
-      <name>DataTorrent Release Repository</name>
-      <url>https://www.datatorrent.com/maven/content/repositories/releases/</url>
-    </repository>
-  </repositories>
 
   <prerequisites>
     <maven>3.0.5</maven>
@@ -36,15 +48,47 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <netbeans.hint.license>malhar-inc</netbeans.hint.license>
     <maven.deploy.skip>false</maven.deploy.skip>
-    <dt.framework.version>3.2.0-SNAPSHOT</dt.framework.version>
-    <!-- the following properties match the properties defined in core/pom.xml -->
-    <jackson.version>1.9.2</jackson.version>
-    <jersey.version>1.9</jersey.version>
-    <jetty.version>8.1.10.v20130312</jetty.version>
+    <apex.core.version>3.2.0-incubating</apex.core.version>
     <semver.plugin.skip>false</semver.plugin.skip>
   </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.mycila</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <configuration>
+          <excludes combine.children="append">
+            <exclude>**/src/test/resources/**/sample_logs/**</exclude>
+            <exclude>src/test/resources/*.csv</exclude>
+            <exclude>**/src/main/resources/com/datatorrent/apps/logstream/**</exclude>
+            <exclude>src/main/c/zmq_push/Makefile</exclude>
+            <exclude>src/test/resources/com/datatorrent/contrib/romesyndication/*.rss</exclude>
+          </excludes>
+          <mapping combine.children="append">
+            <R>SCRIPT_STYLE</R>
+          </mapping>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.rat</groupId>
+        <artifactId>apache-rat-plugin</artifactId>
+        <configuration>
+          <excludes combine.children="append">
+            <exclude>**/src/test/resources/**/sample_logs/**</exclude>
+            <exclude>src/test/resources/*.csv</exclude>
+            <exclude>**/src/main/resources/com/datatorrent/apps/logstream/**</exclude>
+            <exclude>src/main/c/zmq_push/Makefile</exclude>
+            <exclude>src/test/resources/com/datatorrent/contrib/romesyndication/*.rss</exclude>
+            <exclude>src/main/resources/**/*.txt</exclude>
+            <exclude>**/*.json</exclude>
+            <exclude>**/*.md</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
   <profiles>
     <profile>
@@ -98,21 +142,27 @@
         </plugins>
       </build>
     </profile>
+    <profile>
+      <id>all-modules</id>
+      <modules>
+        <module>benchmark</module>
+        <module>apps</module>
+        <module>samples</module>
+      </modules>
+    </profile>
   </profiles>
 
   <modules>
     <module>library</module>
     <module>contrib</module>
     <module>demos</module>
-    <module>samples</module>
-    <module>apps</module>
   </modules>
 
   <dependencies>
     <dependency>
-      <groupId>com.datatorrent</groupId>
-      <artifactId>dt-engine</artifactId>
-      <version>${dt.framework.version}</version>
+      <groupId>org.apache.apex</groupId>
+      <artifactId>apex-engine</artifactId>
+      <version>${apex.core.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

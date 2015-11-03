@@ -1,17 +1,20 @@
 /**
- * Copyright (C) 2015 DataTorrent, Inc.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package com.datatorrent.lib.io.fs;
 
@@ -207,8 +210,8 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
   private int rotationCount;
 
   /**
-   * If a filter stream provider is set it is used to obtain the filter that will be applied to data before it is 
-   * stored in the file. If it null no filter is applied and data is written as is. Multiple filters can be chained 
+   * If a filter stream provider is set it is used to obtain the filter that will be applied to data before it is
+   * stored in the file. If it null no filter is applied and data is written as is. Multiple filters can be chained
    * together by using a filter stream chain provider.
    */
   protected FilterStreamProvider filterStreamProvider;
@@ -237,6 +240,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
    * This isn't the most effective way but adds a little bit of optimization.
    */
   private Long expireStreamAfterAcessMillis;
+  private final Set<String> filesWithOpenStreams;
 
   /**
    * This input port receives incoming tuples.
@@ -261,7 +265,8 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
     }
   };
 
-  private static class RotationState {
+  private static class RotationState
+  {
     boolean notEmpty;
     boolean rotated;
   }
@@ -275,6 +280,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
     fileNameToTmpName = Maps.newHashMap();
     finalizedFiles = Maps.newTreeMap();
     finalizedPart = Maps.newHashMap();
+    filesWithOpenStreams = Sets.newHashSet();
   }
 
   /**
@@ -300,7 +306,8 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
   {
     LOG.debug("setup initiated");
     if (expireStreamAfterAcessMillis == null) {
-      expireStreamAfterAcessMillis = (long)(context.getValue(OperatorContext.SPIN_MILLIS) * context.getValue(Context.DAGContext.CHECKPOINT_WINDOW_COUNT));
+      expireStreamAfterAcessMillis = (long)(context.getValue(OperatorContext.SPIN_MILLIS) *
+        context.getValue(Context.DAGContext.CHECKPOINT_WINDOW_COUNT));
     }
     rollingFile = (maxLength < Long.MAX_VALUE) || (rotationWindows > 0);
 
@@ -318,126 +325,16 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
 
     LOG.debug("FS class {}", fs.getClass());
 
-    //When an entry is removed from the cache, removal listener is notified and it closes the output stream.
-    RemovalListener<String, FSFilterStreamContext> removalListener = new RemovalListener<String, FSFilterStreamContext>()
-    {
-      @Override
-      public void onRemoval(@Nonnull RemovalNotification<String, FSFilterStreamContext> notification)
-      {
-        FSFilterStreamContext streamContext = notification.getValue();
-        if (streamContext != null) {
-          
-          //FilterOutputStream filterStream = streamContext.getFilterStream();
-          try {
-            String filename = notification.getKey();
-            String partFileName = getPartFileNamePri(filename);
+    //building cache
+    RemovalListener<String, FSFilterStreamContext> removalListener = createCacheRemoveListener();
+    CacheLoader<String, FSFilterStreamContext> loader = createCacheLoader();
+    streamsCache = CacheBuilder.newBuilder().maximumSize(maxOpenFiles).expireAfterAccess(expireStreamAfterAcessMillis,
+      TimeUnit.MILLISECONDS).removalListener(removalListener).build(loader);
 
-            LOG.debug("closing {}", partFileName);
-            long start = System.currentTimeMillis();
-            streamContext.close();
-            //filterStream.close();
-            totalWritingTime += System.currentTimeMillis() - start;
-          }
-          catch (IOException e) {
-            throw new RuntimeException(e);
-          }
-        }
-      }
-    };
-
-    //Define cache
-    CacheLoader<String, FSFilterStreamContext> loader = new CacheLoader<String, FSFilterStreamContext>()
-    {
-      @Override
-      public FSFilterStreamContext load(@Nonnull String filename)
-      {
-        String partFileName = getPartFileNamePri(filename);
-        Path originalFilePath = new Path(filePath + Path.SEPARATOR + partFileName);
-
-        Path activeFilePath;
-        if (!alwaysWriteToTmp) {
-          activeFilePath = originalFilePath;
-        } else {
-          //MLHR-1776 : writing to tmp file
-          String tmpFileName = fileNameToTmpName.get(partFileName);
-          if (tmpFileName == null) {
-            tmpFileName = partFileName + '.' + System.currentTimeMillis() + TMP_EXTENSION;
-            fileNameToTmpName.put(partFileName, tmpFileName);
-          }
-          activeFilePath = new Path(filePath + Path.SEPARATOR + tmpFileName);
-        }
-
-        FSDataOutputStream fsOutput;
-
-        boolean sawThisFileBefore = endOffsets.containsKey(filename);
-
-        try {
-          if (fs.exists(originalFilePath) || (alwaysWriteToTmp && fs.exists(activeFilePath))) {
-            if(sawThisFileBefore) {
-              FileStatus fileStatus = fs.getFileStatus(activeFilePath);
-              MutableLong endOffset = endOffsets.get(filename);
-
-              if (endOffset != null) {
-                endOffset.setValue(fileStatus.getLen());
-              }
-              else {
-                endOffsets.put(filename, new MutableLong(fileStatus.getLen()));
-              }
-
-              fsOutput = fs.append(activeFilePath);
-              LOG.debug("appending to {}", activeFilePath);
-            }
-            else {
-              //We never saw this file before and we don't want to append
-              //If the file is rolling we need to delete all its parts.
-              if(rollingFile) {
-                int part = 0;
-
-                while (true) {
-                  Path seenPartFilePath = new Path(filePath + Path.SEPARATOR + getPartFileName(filename, part));
-                  if (!fs.exists(seenPartFilePath)) {
-                    break;
-                  }
-
-                  fs.delete(seenPartFilePath, true);
-                  part = part + 1;
-                }
-
-                fsOutput = fs.create(activeFilePath, (short) replication);
-              }
-              else {
-                //Not rolling is easy, just delete the file and create it again.
-                fs.delete(activeFilePath, true);
-                if(alwaysWriteToTmp){
-                  //we need to delete original file if that exists
-                  if(fs.exists(originalFilePath)){
-                    fs.delete(originalFilePath, true);
-                  }
-                }
-                fsOutput = fs.create(activeFilePath, (short) replication);
-              }
-            }
-          }
-          else {
-            fsOutput = fs.create(activeFilePath, (short) replication);
-            fs.setPermission(activeFilePath, FsPermission.createImmutable(filePermission));
-          }
-
-          LOG.info("opened {}, active {}", partFileName, activeFilePath);
-          return new FSFilterStreamContext(fsOutput);
-        }
-        catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      }
-    };
-
-    streamsCache = CacheBuilder.newBuilder().maximumSize(maxOpenFiles).expireAfterAccess(expireStreamAfterAcessMillis, TimeUnit.MILLISECONDS).removalListener(removalListener).build(loader);
+    LOG.debug("File system class: {}", fs.getClass());
+    LOG.debug("end-offsets {}", endOffsets);
 
     try {
-      LOG.debug("File system class: {}", fs.getClass());
-      LOG.debug("end-offsets {}", endOffsets);
-
       //Restore the files in case they were corrupted and the operator was re-deployed.
       Path writerPath = new Path(filePath);
       if (fs.exists(writerPath)) {
@@ -454,57 +351,13 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
           }
 
           if (fs.exists(activeFilePath)) {
-            LOG.debug("path exists {}", activeFilePath);
-            long offset = endOffsets.get(seenFileName).longValue();
-            FSDataInputStream inputStream = fs.open(activeFilePath);
-            FileStatus status = fs.getFileStatus(activeFilePath);
-
-            if (status.getLen() != offset) {
-              LOG.info("path corrupted {} {} {}", activeFilePath, offset, status.getLen());
-              byte[] buffer = new byte[COPY_BUFFER_SIZE];
-              String recoveryFileName = seenFileNamePart + '.' + System.currentTimeMillis() + TMP_EXTENSION;
-              Path recoveryFilePath = new Path(filePath + Path.SEPARATOR + recoveryFileName);
-              FSDataOutputStream fsOutput = fs.create(recoveryFilePath, (short) replication);
-
-              while (inputStream.getPos() < offset) {
-                long remainingBytes = offset - inputStream.getPos();
-                int bytesToWrite = remainingBytes < COPY_BUFFER_SIZE ? (int) remainingBytes : COPY_BUFFER_SIZE;
-                inputStream.read(buffer);
-                fsOutput.write(buffer, 0, bytesToWrite);
-              }
-
-              flush(fsOutput);
-              fsOutput.close();
-              inputStream.close();
-
-              FileContext fileContext = FileContext.getFileContext(fs.getUri());
-              LOG.debug("active {} recovery {} ", activeFilePath, recoveryFilePath);
-
-              if (alwaysWriteToTmp) {
-                //recovery file is used as the new tmp file and we cannot delete the old tmp file because when the operator
-                //is restored to an earlier check-pointed window, it will look for an older tmp.
-                fileNameToTmpName.put(seenFileNamePart, recoveryFileName);
-              } else {
-                LOG.debug("recovery path {} actual path {} ", recoveryFilePath, status.getPath());
-                fileContext.rename(recoveryFilePath, status.getPath(), Options.Rename.OVERWRITE);
-              }
-            } else {
-              if (alwaysWriteToTmp) {
-                String currentTmp = seenFileNamePart + '.' + System.currentTimeMillis() + TMP_EXTENSION;
-                FSDataOutputStream outputStream = fs.create(new Path(filePath + Path.SEPARATOR + currentTmp));
-                IOUtils.copy(inputStream, outputStream);
-                outputStream.close();
-                fileNameToTmpName.put(seenFileNamePart, currentTmp);
-              }
-              inputStream.close();
-            }
+            recoverFile(seenFileName, seenFileNamePart, activeFilePath);
           }
         }
       }
 
       if (rollingFile) {
-        //delete the left over future rolling files produced from the previous crashed instance
-        //of this operator.
+        //delete the left over future rolling files produced from the previous crashed instance of this operator.
         for(String seenFileName: endOffsets.keySet()) {
           try {
             Integer fileOpenPart = this.openPart.get(seenFileName).getValue();
@@ -547,28 +400,245 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
               rotate(seenFileName);
             }
           }
-          catch (IOException e) {
-            throw new RuntimeException(e);
-          }
-          catch (ExecutionException e) {
+          catch (IOException | ExecutionException e) {
             throw new RuntimeException(e);
           }
         }
       }
-
       LOG.debug("setup completed");
-      LOG.debug("end-offsets {}", endOffsets);
-    }
-    catch (IOException e) {
+    } catch (IOException e) {
       throw new RuntimeException(e);
     }
 
     this.context = context;
 
-    fileCounters.setCounter(Counters.TOTAL_BYTES_WRITTEN,
-                            new MutableLong());
-    fileCounters.setCounter(Counters.TOTAL_TIME_WRITING_MILLISECONDS,
-                            new MutableLong());
+    fileCounters.setCounter(Counters.TOTAL_BYTES_WRITTEN, new MutableLong());
+    fileCounters.setCounter(Counters.TOTAL_TIME_WRITING_MILLISECONDS, new MutableLong());
+  }
+
+  /**
+   * Recovers a file which exists on the disk. If the length of the file is not same as the
+   * length which the operator remembers then the file is truncated. <br/>
+   * When always writing to a temporary file, then a file is restored even when the length is same as what the
+   * operator remembers however this is done only for files which had open streams that weren't closed before
+   * failure.
+   *
+   * @param filename     name of the actual file.
+   * @param partFileName name of the part file. When not rolling this is same as filename; otherwise this is the
+   *                     latest open part file name.
+   * @param filepath     path of the file. When always writing to temp file, this is the path of the temp file; otherwise
+   *                     path of the actual file.
+   * @throws IOException
+   */
+  private void recoverFile(String filename, String partFileName, Path filepath) throws IOException
+  {
+    LOG.debug("path exists {}", filepath);
+    long offset = endOffsets.get(filename).longValue();
+    FSDataInputStream inputStream = fs.open(filepath);
+    FileStatus status = fs.getFileStatus(filepath);
+
+    if (status.getLen() != offset) {
+      LOG.info("path corrupted {} {} {}", filepath, offset, status.getLen());
+      byte[] buffer = new byte[COPY_BUFFER_SIZE];
+      String recoveryFileName = partFileName + '.' + System.currentTimeMillis() + TMP_EXTENSION;
+      Path recoveryFilePath = new Path(filePath + Path.SEPARATOR + recoveryFileName);
+      FSDataOutputStream fsOutput = openStream(recoveryFilePath, false);
+
+      while (inputStream.getPos() < offset) {
+        long remainingBytes = offset - inputStream.getPos();
+        int bytesToWrite = remainingBytes < COPY_BUFFER_SIZE ? (int)remainingBytes : COPY_BUFFER_SIZE;
+        inputStream.read(buffer);
+        fsOutput.write(buffer, 0, bytesToWrite);
+      }
+
+      flush(fsOutput);
+      fsOutput.close();
+      inputStream.close();
+
+      FileContext fileContext = FileContext.getFileContext(fs.getUri());
+      LOG.debug("active {} recovery {} ", filepath, recoveryFilePath);
+
+      if (alwaysWriteToTmp) {
+        //recovery file is used as the new tmp file and we cannot delete the old tmp file because when the operator
+        //is restored to an earlier check-pointed window, it will look for an older tmp.
+        fileNameToTmpName.put(partFileName, recoveryFileName);
+      } else {
+        LOG.debug("recovery path {} actual path {} ", recoveryFilePath, status.getPath());
+        fileContext.rename(recoveryFilePath, status.getPath(), Options.Rename.OVERWRITE);
+      }
+    } else {
+      if (alwaysWriteToTmp && filesWithOpenStreams.contains(filename)) {
+        String currentTmp = partFileName + '.' + System.currentTimeMillis() + TMP_EXTENSION;
+        FSDataOutputStream outputStream = openStream(new Path(filePath + Path.SEPARATOR + currentTmp), false);
+        IOUtils.copy(inputStream, outputStream);
+        streamsCache.put(filename, new FSFilterStreamContext(outputStream));
+        fileNameToTmpName.put(partFileName, currentTmp);
+      }
+      inputStream.close();
+    }
+  }
+
+  /**
+   * Creates the {@link CacheLoader} for loading an output stream when it is not present in the cache.
+   * @return cache loader
+   */
+  private CacheLoader<String, FSFilterStreamContext> createCacheLoader()
+  {
+    return new CacheLoader<String, FSFilterStreamContext>()
+    {
+      @Override
+      public FSFilterStreamContext load(@Nonnull String filename)
+      {
+        if (rollingFile) {
+          RotationState state = getRotationState(filename);
+          if (rollingFile && state.rotated) {
+            openPart.get(filename).add(1);
+            state.rotated = false;
+            MutableLong offset = endOffsets.get(filename);
+            offset.setValue(0);
+          }
+        }
+
+        String partFileName = getPartFileNamePri(filename);
+        Path originalFilePath = new Path(filePath + Path.SEPARATOR + partFileName);
+
+        Path activeFilePath;
+        if (!alwaysWriteToTmp) {
+          activeFilePath = originalFilePath;
+        } else {
+          //MLHR-1776 : writing to tmp file
+          String tmpFileName = fileNameToTmpName.get(partFileName);
+          if (tmpFileName == null) {
+            tmpFileName = partFileName + '.' + System.currentTimeMillis() + TMP_EXTENSION;
+            fileNameToTmpName.put(partFileName, tmpFileName);
+          }
+          activeFilePath = new Path(filePath + Path.SEPARATOR + tmpFileName);
+        }
+
+        FSDataOutputStream fsOutput;
+
+        boolean sawThisFileBefore = endOffsets.containsKey(filename);
+
+        try {
+          if (fs.exists(originalFilePath) || (alwaysWriteToTmp && fs.exists(activeFilePath))) {
+            if (sawThisFileBefore) {
+              FileStatus fileStatus = fs.getFileStatus(activeFilePath);
+              MutableLong endOffset = endOffsets.get(filename);
+
+              if (endOffset != null) {
+                endOffset.setValue(fileStatus.getLen());
+              } else {
+                endOffsets.put(filename, new MutableLong(fileStatus.getLen()));
+              }
+
+              fsOutput = openStream(activeFilePath, true);
+              LOG.debug("appending to {}", activeFilePath);
+            } else {
+              //We never saw this file before and we don't want to append
+              //If the file is rolling we need to delete all its parts.
+              if (rollingFile) {
+                int part = 0;
+
+                while (true) {
+                  Path seenPartFilePath = new Path(filePath + Path.SEPARATOR + getPartFileName(filename, part));
+                  if (!fs.exists(seenPartFilePath)) {
+                    break;
+                  }
+
+                  fs.delete(seenPartFilePath, true);
+                  part = part + 1;
+                }
+
+                fsOutput = openStream(activeFilePath, false);
+              } else {
+                //Not rolling is easy, just delete the file and create it again.
+                fs.delete(activeFilePath, true);
+                if (alwaysWriteToTmp) {
+                  //we need to delete original file if that exists
+                  if (fs.exists(originalFilePath)) {
+                    fs.delete(originalFilePath, true);
+                  }
+                }
+                fsOutput = openStream(activeFilePath, false);
+              }
+            }
+          } else {
+            fsOutput = openStream(activeFilePath, false);
+          }
+          filesWithOpenStreams.add(filename);
+
+          LOG.info("opened {}, active {}", partFileName, activeFilePath);
+          return new FSFilterStreamContext(fsOutput);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }
+    };
+  }
+
+  /**
+   * Creates the removal listener which is attached to the cache.
+   *
+   * @return cache entry removal listener.
+   */
+  private RemovalListener<String, FSFilterStreamContext> createCacheRemoveListener()
+  {
+    //When an entry is removed from the cache, removal listener is notified and it closes the output stream.
+    return new RemovalListener<String, FSFilterStreamContext>()
+    {
+      @Override
+      public void onRemoval(@Nonnull RemovalNotification<String, FSFilterStreamContext> notification)
+      {
+        FSFilterStreamContext streamContext = notification.getValue();
+        if (streamContext != null) {
+          try {
+            String filename = notification.getKey();
+            String partFileName = getPartFileNamePri(filename);
+
+            LOG.debug("closing {}", partFileName);
+            long start = System.currentTimeMillis();
+
+            closeStream(streamContext);
+            filesWithOpenStreams.remove(filename);
+
+            totalWritingTime += System.currentTimeMillis() - start;
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          }
+        }
+      }
+    };
+  }
+
+  /**
+   * Opens the stream for the specified file path in either append mode or create mode.
+   *
+   * @param filepath this is the path of either the actual file or the corresponding temporary file.
+   * @param append   true for opening the file in append mode; false otherwise.
+   * @return output stream.
+   * @throws IOException
+   */
+  protected FSDataOutputStream openStream(Path filepath, boolean append) throws IOException
+  {
+    FSDataOutputStream fsOutput;
+    if (append) {
+      fsOutput = fs.append(filepath);
+    } else {
+      fsOutput = fs.create(filepath, (short)replication);
+      fs.setPermission(filepath, FsPermission.createImmutable(filePermission));
+    }
+    return fsOutput;
+  }
+
+  /**
+   * Closes the stream which has been removed from the cache.
+   *
+   * @param streamContext stream context which is removed from the cache.
+   * @throws IOException
+   */
+  protected void closeStream(FSFilterStreamContext streamContext) throws IOException
+  {
+    streamContext.close();
   }
 
   /**
@@ -589,12 +659,12 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
 
       MutableInt part = finalizedPart.get(fileName);
       if (part == null) {
-        part = new MutableInt();
+        part = new MutableInt(-1);
         finalizedPart.put(fileName, part);
       }
       MutableInt currentOpenPart = openPart.get(fileName);
 
-      for (int x = part.getValue() + 1; x < currentOpenPart.getValue(); x++) {
+      for (int x = part.getValue() + 1; x <= currentOpenPart.getValue(); x++) {
         String prevPartNotFinalized = getPartFileName(fileName, x);
         LOG.debug("request finalize {}", prevPartNotFinalized);
         filesPerWindow.add(prevPartNotFinalized);
@@ -602,7 +672,6 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
       fileName = getPartFileNamePri(fileName);
       part.setValue(currentOpenPart.getValue());
     }
-    LOG.debug("request finalize {}", fileName);
     filesPerWindow.add(fileName);
   }
 
@@ -616,12 +685,11 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
     //Close all the streams you can
     Map<String, FSFilterStreamContext> openStreams = streamsCache.asMap();
     for(String seenFileName: openStreams.keySet()) {
-      //FilterOutputStream filterStream = openStreams.get(seenFileName).getFilterStream();
       FSFilterStreamContext fsFilterStreamContext = openStreams.get(seenFileName);
       try {
         long start = System.currentTimeMillis();
-        //filterStream.close();
-        fsFilterStreamContext.close();
+        closeStream(fsFilterStreamContext);
+        filesWithOpenStreams.remove(seenFileName);
         totalWritingTime += System.currentTimeMillis() - start;
       }
       catch (IOException ex) {
@@ -724,11 +792,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
       }
 
       count.add(1);
-    }
-    catch (IOException ex) {
-      throw new RuntimeException(ex);
-    }
-    catch (ExecutionException ex) {
+    } catch (IOException | ExecutionException ex) {
       throw new RuntimeException(ex);
     }
   }
@@ -740,24 +804,19 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
    * @throws IOException
    * @throws ExecutionException
    */
-  protected void rotate(String fileName) throws IllegalArgumentException,
-                                                IOException,
-                                                ExecutionException
+  protected void rotate(String fileName) throws IllegalArgumentException, IOException, ExecutionException
   {
     requestFinalize(fileName);
     counts.remove(fileName);
     streamsCache.invalidate(fileName);
     MutableInt mi = openPart.get(fileName);
-    int rotatedFileIndex = mi.getValue();
-    mi.add(1);
-    LOG.debug("Part file index: {}", openPart);
-    endOffsets.get(fileName).setValue(0L);
-    String partFileName = getPartFileName(fileName, rotatedFileIndex);
+    LOG.debug("Part file rotated {} : {}", fileName, mi.getValue());
+
+    //TODO: remove this as rotateHook is deprecated.
+    String partFileName = getPartFileName(fileName, mi.getValue());
     rotateHook(partFileName);
 
-    if (rotationWindows > 0) {
-      getRotationState(fileName).rotated = true;
-    }
+    getRotationState(fileName).rotated = true;
   }
 
   private RotationState getRotationState(String fileName)
@@ -775,6 +834,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
    * the name of the file part that has just completed closed.
    * @param finishedFile The name of the file part that has just completed and closed.
    */
+  @Deprecated
   protected void rotateHook(@SuppressWarnings("unused") String finishedFile)
   {
     //Do nothing by default
@@ -884,14 +944,9 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
           if (rotate) {
             try {
               rotate(filename);
-            } catch (IOException e) {
-              throw new RuntimeException(e);
-            } catch (ExecutionException e) {
+            } catch (IOException | ExecutionException e) {
               throw new RuntimeException(e);
             }
-          }
-          if (rotationState != null) {
-            rotationState.rotated = false;
           }
         }
       }
@@ -935,8 +990,8 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
   }
 
   /**
-   * Sets the maximum length of a an output file in bytes. By default this is null,
-   * if this is not null then the output operator is in rolling mode.
+   * Sets the maximum length of a an output file in bytes. By default this is Long.MAX_VALUE,
+   * if this is not Long.MAX_VALUE then the output operator is in rolling mode.
    * @param maxLength The maximum length of an output file in bytes, when in rolling mode.
    */
   public void setMaxLength(long maxLength)
@@ -1011,7 +1066,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
   }
 
   /**
-   * Get the filter stream provider 
+   * Get the filter stream provider
    * @return The filter stream provider.
    */
   public FilterStreamProvider getFilterStreamProvider()
@@ -1020,7 +1075,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
   }
 
   /**
-   * Set the filter stream provider. When a non-null provider is specified it will be used to supply the filter that 
+   * Set the filter stream provider. When a non-null provider is specified it will be used to supply the filter that
    * will be  applied to data before it is stored in the file.
    * @param filterStreamProvider The filter stream provider
    */
@@ -1044,17 +1099,17 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
     TOTAL_TIME_WRITING_MILLISECONDS
   }
 
-  private class FSFilterStreamContext implements FilterStreamContext<FilterOutputStream>
+  protected class FSFilterStreamContext implements FilterStreamContext<FilterOutputStream>
   {
-    
+
     private FSDataOutputStream outputStream;
-    
+
     private FilterStreamContext filterContext;
     private NonCloseableFilterOutputStream outputWrapper;
-    
+
     public FSFilterStreamContext(FSDataOutputStream outputStream) throws IOException
     {
-      this.outputStream = outputStream;     
+      this.outputStream = outputStream;
       outputWrapper = new NonCloseableFilterOutputStream(outputStream);
       //resetFilter();
       initializeContext();
@@ -1082,7 +1137,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
         filterStreamProvider.reclaimFilterStreamContext(filterContext);
       }
     }
-    
+
     @SuppressWarnings("unchecked")
     public void initializeContext() throws IOException
     {
@@ -1090,7 +1145,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
         filterContext = filterStreamProvider.getFilterStreamContext(outputWrapper);
       }
     }
-    
+
     public void close() throws IOException
     {
       //finalizeContext();
@@ -1099,10 +1154,10 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
       }
       outputStream.close();
     }
-    
+
   }
-  
-  private static class NonCloseableFilterOutputStream extends FilterOutputStream 
+
+  private static class NonCloseableFilterOutputStream extends FilterOutputStream
   {
     public NonCloseableFilterOutputStream(OutputStream out)
     {
@@ -1175,7 +1230,7 @@ public abstract class AbstractFileOutputOperator<INPUT> extends BaseOperator imp
         //a tmp file has tmp extension always preceded by timestamp
         String actualFileName = statusName.substring(0, statusName.lastIndexOf('.', statusName.lastIndexOf('.') - 1));
         if (fileName.equals(actualFileName)) {
-          LOG.debug("deleting vagrant file {}", statusName);
+          LOG.debug("deleting stray file {}", statusName);
           fs.delete(status.getPath(), true);
         }
       }
