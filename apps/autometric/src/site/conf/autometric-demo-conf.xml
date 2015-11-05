@@ -8,4 +8,12 @@
     <name>dt.application.AutoMetricDemo.operator.FileSplitter.prop.scanner.files</name>
     <value>/user/chandni/autometric</value>
   </property>
+  <property>
+    <name>dt.application.AutoMetricDemo.operator.LineReader.prop.PARTITIONER</name>
+    <value>com.datatorrent.common.partitioner.StatelessPartitioner:4</value>
+  </property>
+  <property>
+    <name>dt.operator.LineReceiver.port.input.attr.PARTITION_PARALLEL</name>
+    <value>true</value>
+  </property>
 </configuration>
