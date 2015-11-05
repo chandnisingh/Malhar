@@ -16,4 +16,8 @@
     <name>dt.application.AutoMetricDemo.operator.LineReceiver.attr.PARTITIONER</name>
     <value>com.datatorrent.common.partitioner.StatelessPartitioner:4</value>
   </property>
+  <property>
+    <name>dt.attr.METRICS_TRANSPORT</name>
+    <value>builtin:AppDataTrackerFeed</value>
+  </property>
 </configuration>
