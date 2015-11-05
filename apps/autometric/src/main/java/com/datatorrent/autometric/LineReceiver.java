@@ -11,10 +11,10 @@ import com.datatorrent.common.util.BaseOperator;
 public class LineReceiver extends BaseOperator
 {
   @AutoMetric
-  int length;
+  long length;
 
   @AutoMetric
-  int count;
+  long count;
 
   public final transient DefaultInputPort<String> input = new DefaultInputPort<String>()
   {

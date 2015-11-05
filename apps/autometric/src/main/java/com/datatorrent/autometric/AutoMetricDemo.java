@@ -28,6 +28,24 @@ public class AutoMetricDemo implements StreamingApplication
 
   public static class LineInputOperator extends AbstractFileInputOperator.FileLineInputOperator
   {
+    private boolean emit;
+
+    @Override
+    public void emitTuples()
+    {
+      if (emit) {
+        emit = false;
+        super.emitTuples();
+      }
+    }
+
+    @Override
+    public void beginWindow(long windowId)
+    {
+      emit = true;
+      super.beginWindow(windowId);
+    }
+
     @Override
     protected void scanDirectory()
     {
