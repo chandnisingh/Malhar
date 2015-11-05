@@ -98,7 +98,7 @@ public class ApplicationTest
     @Override
     public void populateDAG(DAG dag, Configuration conf)
     {
-      AbstractFileInputOperatorTest.TestFileInputOperator input = dag.addOperator("Input", new AbstractFileInputOperatorTest.TestFileInputOperator());
+      AbstractFileInputOperator.FileLineInputOperator input = dag.addOperator("Input", new AbstractFileInputOperator.FileLineInputOperator());
       SimpleFileOutputOperator output = dag.addOperator("Output", new SimpleFileOutputOperator());
       output.setAlwaysWriteToTmp(false);
       output.setOutputFileName("outfile.txt");
