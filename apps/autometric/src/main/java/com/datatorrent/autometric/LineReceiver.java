@@ -7,7 +7,6 @@ package com.datatorrent.autometric;
 import com.datatorrent.api.AutoMetric;
 import com.datatorrent.api.DefaultInputPort;
 import com.datatorrent.common.util.BaseOperator;
-import com.datatorrent.lib.io.block.AbstractBlockReader;
 
 public class LineReceiver extends BaseOperator
 {
@@ -17,16 +16,15 @@ public class LineReceiver extends BaseOperator
   @AutoMetric
   int count;
 
-  public final transient DefaultInputPort<AbstractBlockReader.ReaderRecord<String>> input =
-    new DefaultInputPort<AbstractBlockReader.ReaderRecord<String>>()
+  public final transient DefaultInputPort<String> input = new DefaultInputPort<String>()
+  {
+    @Override
+    public void process(String s)
     {
-      @Override
-      public void process(AbstractBlockReader.ReaderRecord<String> s)
-      {
-        length += s.getRecord().length();
-        count++;
-      }
-    };
+      length += s.length();
+      count++;
+    }
+  };
 
   @Override
   public void beginWindow(long windowId)

@@ -8,20 +8,19 @@ import org.apache.hadoop.conf.Configuration;
 import com.datatorrent.api.DAG;
 import com.datatorrent.api.StreamingApplication;
 import com.datatorrent.api.annotation.ApplicationAnnotation;
-import com.datatorrent.lib.io.fs.FileSplitterInput;
+import com.datatorrent.lib.io.fs.AbstractFileInputOperator;
 
-@ApplicationAnnotation(name="AutoMetricDemo")
+@ApplicationAnnotation(name = "AutoMetricDemo")
 public class AutoMetricDemo implements StreamingApplication
 {
 
   @Override
   public void populateDAG(DAG dag, Configuration conf)
   {
-    FileSplitterInput input = dag.addOperator("FileSplitter", new FileSplitterInput());
-    LineReader reader = dag.addOperator("LineReader", new LineReader());
+    AbstractFileInputOperator.FileLineInputOperator input = dag.addOperator("LineInput",
+      new AbstractFileInputOperator.FileLineInputOperator());
     LineReceiver receiver = dag.addOperator("LineReceiver", new LineReceiver());
 
-    dag.addStream("Blocks", input.blocksMetadataOutput, reader.blocksMetadataInput);
-    dag.addStream("Lines", reader.messages, receiver.input);
+    dag.addStream("Blocks", input.output, receiver.input);
   }
 }

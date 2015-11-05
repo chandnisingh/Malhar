@@ -5,23 +5,11 @@
     <value>1024</value>
   </property>
   <property>
-    <name>dt.application.AutoMetricDemo.operator.FileSplitter.prop.scanner.files</name>
+    <name>dt.application.AutoMetricDemo.operator.LineInput.prop.directory</name>
     <value>/user/chandni/autometric</value>
   </property>
   <property>
-    <name>dt.application.AutoMetricDemo.operator.FileSplitter.prop.blocksThreshold</name>
-    <value>5</value>
-  </property>
-  <property>
-    <name>dt.application.AutoMetricDemo.operator.LineReader.prop.PARTITIONER</name>
+    <name>dt.application.AutoMetricDemo.operator.LineReceiver.prop.PARTITIONER</name>
     <value>com.datatorrent.common.partitioner.StatelessPartitioner:4</value>
-  </property>
-  <property>
-    <name>dt.application.AutoMetricDemo.operator.LineReader.prop.collectStats</name>
-    <value>false</value>
-  </property>
-  <property>
-    <name>dt.operator.LineReceiver.port.input.attr.PARTITION_PARALLEL</name>
-    <value>true</value>
   </property>
 </configuration>
