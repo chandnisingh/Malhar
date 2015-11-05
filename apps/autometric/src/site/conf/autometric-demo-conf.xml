@@ -13,6 +13,10 @@
     <value>com.datatorrent.common.partitioner.StatelessPartitioner:4</value>
   </property>
   <property>
+    <name>dt.application.AutoMetricDemo.operator.LineReader.prop.collectStats</name>
+    <value>false</value>
+  </property>
+  <property>
     <name>dt.operator.LineReceiver.port.input.attr.PARTITION_PARALLEL</name>
     <value>true</value>
   </property>
