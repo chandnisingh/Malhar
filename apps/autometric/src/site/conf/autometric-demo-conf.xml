@@ -9,6 +9,10 @@
     <value>/user/chandni/autometric</value>
   </property>
   <property>
+    <name>dt.application.AutoMetricDemo.operator.FileSplitter.prop.blocksThreshold</name>
+    <value>5</value>
+  </property>
+  <property>
     <name>dt.application.AutoMetricDemo.operator.LineReader.prop.PARTITIONER</name>
     <value>com.datatorrent.common.partitioner.StatelessPartitioner:4</value>
   </property>
