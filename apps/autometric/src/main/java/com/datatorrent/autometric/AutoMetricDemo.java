@@ -3,7 +3,10 @@
  */
 package com.datatorrent.autometric;
 
+import java.util.Set;
+
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 
 import com.datatorrent.api.DAG;
 import com.datatorrent.api.StreamingApplication;
@@ -17,10 +20,27 @@ public class AutoMetricDemo implements StreamingApplication
   @Override
   public void populateDAG(DAG dag, Configuration conf)
   {
-    AbstractFileInputOperator.FileLineInputOperator input = dag.addOperator("LineInput",
-      new AbstractFileInputOperator.FileLineInputOperator());
+    LineInputOperator input = dag.addOperator("LineInput", new LineInputOperator());
     LineReceiver receiver = dag.addOperator("LineReceiver", new LineReceiver());
 
     dag.addStream("Blocks", input.output, receiver.input);
+  }
+
+  public static class LineInputOperator extends AbstractFileInputOperator.FileLineInputOperator
+  {
+    @Override
+    protected void scanDirectory()
+    {
+      if (System.currentTimeMillis() - scanIntervalMillis >= lastScanMillis) {
+        Set<Path> newPaths = scanner.scan(fs, filePath, processedFiles);
+
+        for (Path newPath : newPaths) {
+          String newPathString = newPath.toString();
+          pendingFiles.add(newPathString);
+          localProcessedFileCount.increment();
+        }
+        lastScanMillis = System.currentTimeMillis();
+      }
+    }
   }
 }

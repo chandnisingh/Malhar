@@ -5,12 +5,16 @@
     <value>1024</value>
   </property>
   <property>
+    <name>dt.application.AutoMetricDemo.attr.APPLICATION_WINDOW_COUNT</name>
+    <value>60</value>
+  </property>
+  <property>
     <name>dt.application.AutoMetricDemo.operator.LineInput.prop.directory</name>
     <value>/user/chandni/autometric</value>
   </property>
   <property>
     <name>dt.application.AutoMetricDemo.operator.LineInput.prop.emitBatchSize</name>
-    <value>100</value>
+    <value>10</value>
   </property>
   <property>
     <name>dt.application.AutoMetricDemo.operator.LineReceiver.attr.PARTITIONER</name>
