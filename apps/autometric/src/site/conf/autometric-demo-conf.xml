@@ -9,6 +9,10 @@
     <value>/user/chandni/autometric</value>
   </property>
   <property>
+    <name>dt.application.AutoMetricDemo.operator.LineInput.prop.emitBatchSize</name>
+    <value>100</value>
+  </property>
+  <property>
     <name>dt.application.AutoMetricDemo.operator.LineReceiver.attr.PARTITIONER</name>
     <value>com.datatorrent.common.partitioner.StatelessPartitioner:4</value>
   </property>
