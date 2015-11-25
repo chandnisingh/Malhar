@@ -54,8 +54,9 @@ import com.datatorrent.common.util.FSStorageAgent;
  * application window boundaries.
  *
  * @since 2.0.0
+ * @deprecated use {@link com.datatorrent.lib.util.WindowDataManager}
  */
-
+@Deprecated
 public interface IdempotentStorageManager extends StorageAgent, Component<Context.OperatorContext>
 {
   /**

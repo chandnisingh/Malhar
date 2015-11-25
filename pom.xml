@@ -32,7 +32,7 @@
   <artifactId>malhar</artifactId>
   <version>3.3.0-incubating-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>Apache Apex Malhar</name>
+  <name>Apache Apex Malhar (incubating)</name>
   <url>http://apex.apache.org</url>
 
   <licenses>
@@ -126,6 +126,7 @@
                 <ignoreMissingClasses>true</ignoreMissingClasses>
                 <excludes>
                   <exclude>*POJO*</exclude>
+                  <exclude>org.apache.hadoop.io.file.tfile.*</exclude>
                 </excludes>
               </parameter>
               <skip>${semver.plugin.skip}</skip>
@@ -139,8 +140,28 @@
               </execution>
             </executions>
           </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-checkstyle-plugin</artifactId>
+            <configuration>
+              <maxAllowedViolations>8768</maxAllowedViolations>
+            </configuration>
+          </plugin>
         </plugins>
       </build>
+    </profile>
+    <profile>
+      <id>skip-source-release-attach</id>
+      <activation>
+        <file>
+          <exists>${basedir}/NOTICE</exists>
+        </file>
+      </activation>
+      <properties>
+        <remoteresources.skip>true</remoteresources.skip>
+        <!-- do not push source archives to the repo - see MPOM-90 -->
+        <assembly.attach>false</assembly.attach>
+      </properties>
     </profile>
     <profile>
       <id>all-modules</id>

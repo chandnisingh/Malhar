@@ -46,6 +46,7 @@ import com.datatorrent.lib.helper.OperatorContextTestHelper;
 /**
  * Tests for {@link IdempotentStorageManager}
  */
+@Deprecated
 public class IdempotentStorageManagerTest
 {
   private static class TestMeta extends TestWatcher
