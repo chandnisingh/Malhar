@@ -4,12 +4,12 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <artifactId>malhar-apps</artifactId>
-    <groupId>com.datatorrent</groupId>
-    <version>2.2.0-SNAPSHOT</version>
+    <groupId>org.apache.apex</groupId>
+    <version>3.3.0-incubating-SNAPSHOT</version>
   </parent>
 
   <groupId>com.datatorrent</groupId>
-  <version>1.0.2</version>
+  <version>1.0.2-SNAPSHOT</version>
   <artifactId>schemaApp</artifactId>
   <packaging>jar</packaging>
 
@@ -19,7 +19,7 @@
 
   <properties>
     <!-- change this if you desire to use a different version of DataTorrent -->
-    <datatorrent.version>3.2.0-SNAPSHOT</datatorrent.version>
+    <datatorrent.version>3.3.0-incubating-SNAPSHOT</datatorrent.version>
     <datatorrent.apppackage.classpath>lib/*.jar</datatorrent.apppackage.classpath>
   </properties>
 
@@ -286,8 +286,23 @@
   <dependencies>
     <!-- add your dependencies here -->
     <dependency>
-      <groupId>com.datatorrent</groupId>
-      <artifactId>dt-common</artifactId>
+      <groupId>org.apache.apex</groupId>
+      <artifactId>malhar-library</artifactId>
+      <version>${datatorrent.version}</version>
+      <!--
+           If you know that your application does not need transitive dependencies pulled in by malhar-library,
+           uncomment the following to reduce the size of your app package.
+      -->
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.apex</groupId>
+      <artifactId>apex-common</artifactId>
       <version>${datatorrent.version}</version>
       <scope>provided</scope>
     </dependency>
@@ -298,20 +313,15 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>malhar-library</artifactId>
+      <groupId>org.apache.apex</groupId>
+      <artifactId>apex-engine</artifactId>
       <version>${datatorrent.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
+      <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>${project.groupId}</groupId>
+      <groupId>com.datatorrent</groupId>
       <artifactId>dt-library</artifactId>
-      <version>${datatorrent.version}</version>
+      <version>3.3.0-SNAPSHOT</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>

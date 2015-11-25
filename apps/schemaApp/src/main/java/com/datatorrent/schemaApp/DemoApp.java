@@ -14,10 +14,12 @@ import com.datatorrent.api.DAG;
 import com.datatorrent.api.StreamingApplication;
 import com.datatorrent.api.annotation.ApplicationAnnotation;
 
+import com.datatorrent.lib.bucket.TimeBasedBucketManagerImpl;
+import com.datatorrent.lib.bucket.TimeBasedBucketManagerPOJOImpl;
 import com.datatorrent.lib.db.jdbc.JdbcPOJOInputOperator;
 import com.datatorrent.lib.db.jdbc.JdbcPOJOOutputOperator;
 import com.datatorrent.lib.db.jdbc.JdbcTransactionalStore;
-import com.datatorrent.lib.dedup.DeduperTimeBasedPOJOImpl;
+import com.datatorrent.lib.dedup.DeduperPOJOImpl;
 import com.datatorrent.lib.util.FieldInfo;
 
 @ApplicationAnnotation(name = "SchemaDemo")
@@ -27,7 +29,7 @@ public class DemoApp implements StreamingApplication
   public void populateDAG(DAG dag, Configuration conf)
   {
     JdbcPOJOInputOperator jdbcInput = dag.addOperator("JdbcInput", new JdbcPOJOInputOperator());
-    DeduperTimeBasedPOJOImpl deduper = dag.addOperator("Deduper", new DeduperTimeBasedPOJOImpl());
+    DeduperPOJOImpl deduper = dag.addOperator("Deduper", new DeduperPOJOImpl());
     JdbcPOJOOutputOperator jdbcOutput = dag.addOperator("JdbcOutput", new JdbcPOJOOutputOperator());
 
     JdbcTransactionalStore jdbcStore = new JdbcTransactionalStore();
@@ -55,10 +57,10 @@ public class DemoApp implements StreamingApplication
     jdbcOutput.setFieldInfos(t2FieldInfos);
 
     //Configure deduper
-    deduper.getBucketManager().setKeyExpression("name");
-    deduper.getBucketManager().setTimeExpression("time");
+    ((TimeBasedBucketManagerPOJOImpl)deduper.getBucketManager()).setKeyExpression("name");
+    ((TimeBasedBucketManagerPOJOImpl)deduper.getBucketManager()).setTimeExpression("time");
 
-    dag.addStream("data", jdbcInput.outputPort, deduper.inputPojo);
+    dag.addStream("data", jdbcInput.outputPort, deduper.input);
     dag.addStream("deduped", deduper.output, jdbcOutput.input);
   }
 }
