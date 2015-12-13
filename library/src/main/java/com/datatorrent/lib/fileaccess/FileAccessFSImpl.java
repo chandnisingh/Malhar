@@ -142,6 +142,21 @@ public abstract class FileAccessFSImpl implements FileAccess
   }
 
   @Override
+  public RemoteIterator<LocatedFileStatus> listFiles() throws IOException
+  {
+    if (!fs.exists(new Path(basePath))) {
+      return null;
+    }
+    return fs.listLocatedStatus(new Path(basePath));
+  }
+
+  @Override
+  public void deleteBucket(long bucketKey) throws IOException
+  {
+    fs.delete(getBucketPath(bucketKey), true);
+  }
+
+  @Override
   public String toString()
   {
     return this.getClass().getSimpleName() + "[basePath=" + basePath + "]";

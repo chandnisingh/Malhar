@@ -52,7 +52,10 @@ public interface FileAccess extends Closeable
    * @throws IOException
    */
   void rename(long bucketKey, String oldName, String newName) throws IOException;
+
   void delete(long bucketKey, String fileName) throws IOException;
+
+  void deleteBucket(long bucketKey) throws IOException;
 
   long getFileSize(long bucketKey, String s) throws IOException;
 
@@ -74,6 +77,13 @@ public interface FileAccess extends Closeable
    * @throws IOException
    */
   RemoteIterator<LocatedFileStatus> listFiles(long bucketKey) throws IOException;
+
+  /**
+   * Lists all the files (buckets) in the base path.
+   * @return all the buckets
+   * @throws IOException
+   */
+  RemoteIterator<LocatedFileStatus> listFiles() throws IOException;
 
   /**
    * Data File Format Reader
