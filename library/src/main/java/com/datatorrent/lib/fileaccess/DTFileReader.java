@@ -81,6 +81,18 @@ public class DTFileReader implements FileAccess.FileReader
   }
 
   @Override
+  public void readFullyTo(TreeMap<Slice, Slice> data) throws IOException
+  {
+    scanner.rewind();
+    for (; !scanner.atEnd(); scanner.advance()) {
+      Entry en = scanner.entry();
+      Slice key = new Slice(en.getBlockBuffer(), en.getKeyOffset(), en.getKeyLength());
+      Slice value = new Slice(en.getBlockBuffer(), en.getValueOffset(), en.getValueLength());
+      data.put(key, value);
+    }
+  }
+
+  @Override
   public void reset() throws IOException
   {
     scanner.rewind();

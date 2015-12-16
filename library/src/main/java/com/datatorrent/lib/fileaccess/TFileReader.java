@@ -80,6 +80,22 @@ public class TFileReader implements FileAccess.FileReader
   }
 
   @Override
+  public void readFullyTo(TreeMap<Slice, Slice> data) throws IOException
+  {
+    scanner.rewind();
+    for (; !scanner.atEnd(); scanner.advance()) {
+      Entry en = scanner.entry();
+      int klen = en.getKeyLength();
+      int vlen = en.getValueLength();
+      byte[] key = new byte[klen];
+      byte[] value = new byte[vlen];
+      en.getKey(key);
+      en.getValue(value);
+      data.put(new Slice(key, 0, key.length), new Slice(value, 0, value.length));
+    }
+  }
+
+  @Override
   public void reset() throws IOException
   {
     scanner.rewind();

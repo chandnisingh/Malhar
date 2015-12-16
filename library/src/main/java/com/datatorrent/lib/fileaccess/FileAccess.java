@@ -88,6 +88,14 @@ public interface FileAccess extends Closeable
     void readFully(TreeMap<Slice, byte[]> data) throws IOException;
 
     /**
+     * Reads the entire contents of the underlying file into a tree map where keys and values are both of type
+     * Slice
+     * @param data
+     * @throws IOException
+     */
+    void readFullyTo(TreeMap<Slice, Slice> data) throws IOException;
+
+    /**
      * Repositions the pointer to the beginning of the underlying file.
      * @throws IOException
      */
