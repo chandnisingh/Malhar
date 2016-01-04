@@ -380,7 +380,7 @@ public class BucketsDataManager extends WindowDataManager.FSWindowDataManager im
   @Override
   public void purgeTimeBucketsBefore(long time)
   {
-    purgeTime.getAndSet(time);
+    purgeTime.set(time);
   }
 
   private static final Logger LOG = LoggerFactory.getLogger(BucketsDataManager.class);

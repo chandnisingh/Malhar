@@ -21,6 +21,7 @@ package com.datatorrent.lib.state.managed;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -109,7 +110,6 @@ public interface Bucket extends Component<Context.OperatorContext>
   {
     private long timeBucket;
     private Slice value;
-    private boolean readFromFile;
 
     protected BucketedValue()
     {
@@ -160,12 +160,14 @@ public interface Bucket extends Component<Context.OperatorContext>
     @Override
     public int hashCode()
     {
-      int result = (int)(timeBucket ^ (timeBucket >>> 32));
-      result = 31 * result + value.hashCode();
-      return result;
+      return Objects.hash(timeBucket, value);
     }
   }
 
+  /**
+   * Default bucket.<br/>
+   * Not thread-safe.
+   */
   class DefaultBucket implements Bucket
   {
     private final long bucketId;
@@ -178,6 +180,9 @@ public interface Bucket extends Component<Context.OperatorContext>
 
     //Data persisted in bucket data files
     private final transient Map<Slice, BucketedValue> committedData = Maps.newHashMap();
+
+    //Data serialized/deserialized from bucket data files
+    private final transient Map<Slice, BucketedValue> readCache = Maps.newConcurrentMap();
 
     //TimeBucket -> FileReaders
     private final transient Map<Long, FileAccess.FileReader> readers = Maps.newTreeMap();
@@ -240,6 +245,11 @@ public interface Bucket extends Component<Context.OperatorContext>
       if (bucketedValue != null) {
         return bucketedValue.getValue();
       }
+
+      bucketedValue = readCache.get(key);
+      if (bucketedValue != null) {
+        return bucketedValue.getValue();
+      }
       return null;
     }
 
@@ -249,7 +259,7 @@ public interface Bucket extends Component<Context.OperatorContext>
         Slice valSlice = getKeyFromTimeBucketReader(key, timeBucket);
         if (valSlice != null) {
           BucketedValue bucketedValue = new BucketedValue(timeBucket, valSlice);
-          committedData.put(key, bucketedValue);
+          readCache.put(key, bucketedValue);
         }
         return valSlice;
       } else {
@@ -267,8 +277,7 @@ public interface Bucket extends Component<Context.OperatorContext>
               Slice valSlice = getKeyFromTimeBucketReader(key, immutableTimeBucketMeta.getTimeBucketId());
               if (valSlice != null) {
                 BucketedValue bucketedValue = new BucketedValue(immutableTimeBucketMeta.getTimeBucketId(), valSlice);
-                bucketedValue.readFromFile = true;
-                committedData.put(key, bucketedValue);
+                readCache.put(key, bucketedValue);
                 return valSlice;
               }
             }
@@ -282,7 +291,7 @@ public interface Bucket extends Component<Context.OperatorContext>
     }
 
     @Override
-    public synchronized Slice get(Slice key, long timeBucket, ReadSource readSource)
+    public Slice get(Slice key, long timeBucket, ReadSource readSource)
     {
       switch (readSource) {
         case MEMORY:
@@ -376,15 +385,14 @@ public interface Bucket extends Component<Context.OperatorContext>
     }
 
     @Override
-    public synchronized long freeMemory() throws IOException
+    public long freeMemory() throws IOException
     {
       long memoryFreed = 0;
       for (Map.Entry<Slice, BucketedValue> entry : committedData.entrySet()) {
-        if (!entry.getValue().readFromFile) {
-          memoryFreed += entry.getKey().length + entry.getValue().getValue().length;
-        }
+        memoryFreed += entry.getKey().length + entry.getValue().getValue().length;
       }
       committedData.clear();
+      readCache.clear();
       if (cachedBucketMetas != null) {
 
         for (BucketsMetaDataManager.ImmutableTimeBucketMeta tbm : cachedBucketMetas) {
@@ -412,7 +420,7 @@ public interface Bucket extends Component<Context.OperatorContext>
     }
 
     @Override
-    public synchronized void committed(long windowId)
+    public void committed(long windowId)
     {
       Iterator<Map.Entry<Long, Map<Slice, BucketedValue>>> stateIterator = checkpointedData.entrySet().iterator();
 
@@ -450,7 +458,7 @@ public interface Bucket extends Component<Context.OperatorContext>
     }
 
     @Override
-    public synchronized void teardown()
+    public void teardown()
     {
       Set<Long> failureBuckets = Sets.newHashSet();
       for (Map.Entry<Long, FileAccess.FileReader> entry : readers.entrySet()) {

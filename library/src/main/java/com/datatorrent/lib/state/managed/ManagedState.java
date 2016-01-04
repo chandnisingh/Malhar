@@ -21,7 +21,14 @@ package com.datatorrent.lib.state.managed;
 
 import com.datatorrent.lib.state.BucketedState;
 
+/**
+ * A {@link BucketedState} that defines a limit on the size (optimal size) being used in memory.
+ */
 public interface ManagedState extends BucketedState
 {
+  /**
+   * Sets the optimal cache size.
+   * @param bytes optimal cache bytes.
+   */
   void setCacheSize(long bytes);
 }

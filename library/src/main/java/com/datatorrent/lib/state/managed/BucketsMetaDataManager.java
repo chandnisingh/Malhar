@@ -23,6 +23,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeSet;
 
 import javax.annotation.Nullable;
@@ -289,28 +290,13 @@ public class BucketsMetaDataManager
 
       TimeBucketMeta that = (TimeBucketMeta)o;
 
-      if (bucketId != that.bucketId) {
-        return false;
-      }
-      if (timeBucketId != that.timeBucketId) {
-        return false;
-      }
-      if (lastTransferredWindowId != that.lastTransferredWindowId) {
-        return false;
-      }
-      return sizeInBytes == that.sizeInBytes && firstKey.equals(that.firstKey);
-
+      return bucketId == that.bucketId && timeBucketId == that.timeBucketId;
     }
 
     @Override
     public int hashCode()
     {
-      int result = (int)(bucketId ^ (bucketId >>> 32));
-      result = 31 * result + (int)(timeBucketId ^ (timeBucketId >>> 32));
-      result = 31 * result + (int)(lastTransferredWindowId ^ (lastTransferredWindowId >>> 32));
-      result = 31 * result + (int)(sizeInBytes ^ (sizeInBytes >>> 32));
-      result = 31 * result + firstKey.hashCode();
-      return result;
+      return Objects.hash(bucketId, timeBucketId);
     }
 
     @Override

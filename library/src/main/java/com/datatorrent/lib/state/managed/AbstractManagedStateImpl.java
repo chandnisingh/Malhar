@@ -57,7 +57,31 @@ import com.datatorrent.netlet.util.DTThrowable;
 import com.datatorrent.netlet.util.Slice;
 
 /**
- * Not thread safe.
+ * An abstract implementation of managed state.<br/>
+ *
+ * The important sub-components here are:
+ * <ol>
+ *   <li>
+ *     {@link #dataManager}: writes incremental checkpoints in window files and transfers data from window
+ *     files to bucket files.
+ *   </li>
+ *   <li>
+ *     {@link #bucketsMetaDataManager}: a bucket on disk is sub-divided into time-buckets. This manages meta-bucket
+ *     information (list of {@link com.datatorrent.lib.state.managed.BucketsMetaDataManager.TimeBucketMeta}) per bucket.
+ *   </li>
+ *   <li>
+ *     {@link #timeBucketAssigner}: assigns time-buckets to keys and manages the time boundaries.
+ *   </li>
+ *   <li>
+ *     {@link #stateTracker}: tracks the size of data in memory and requests buckets to free memory when enough memory
+ *     is not available.
+ *   </li>
+ *   <li>
+ *     {@link #fileAccess}: pluggable file system abstraction.
+ *   </li>
+ * </ol>
+ *
+ * The implementations of put, getSync and getAsync here use windowId as the time field to derive timeBucket of a key.
  */
 public abstract class AbstractManagedStateImpl
     implements ManagedState, Operator, Operator.CheckpointListener, ManagedStateContext
@@ -155,6 +179,13 @@ public abstract class AbstractManagedStateImpl
     stateTracker.setup(context);
   }
 
+  /**
+   * Gets the number of buckets which is required during setup to create the array of buckets.<br/>
+   * {@link ManagedStateImpl} provides num of buckets which is injected using a property.<br/>
+   * {@link TimeManagedStateImpl} provides num of buckets which are calculated based on time settings.
+   *
+   * @return number of buckets.
+   */
   public abstract int getNumBuckets();
 
   @Override
@@ -191,19 +222,17 @@ public abstract class AbstractManagedStateImpl
     return buckets[bucketIdx].get(key, -1, Bucket.ReadSource.ALL);
   }
 
-  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
   @Override
   public Future<Slice> getAsync(long bucketId, Slice key)
   {
     int bucketIdx = prepareBucket(bucketId);
     Bucket bucket = buckets[bucketIdx];
-    synchronized (bucket) {
-      Slice cachedVal = buckets[bucketIdx].get(key, -1, Bucket.ReadSource.MEMORY);
-      if (cachedVal != null) {
-        return Futures.immediateFuture(cachedVal);
-      }
-      return readerService.submit(new KeyFetchTask(bucket, key, -1, throwable));
+
+    Slice cachedVal = buckets[bucketIdx].get(key, -1, Bucket.ReadSource.MEMORY);
+    if (cachedVal != null) {
+      return Futures.immediateFuture(cachedVal);
     }
+    return readerService.submit(new KeyFetchTask(bucket, key, -1, throwable));
   }
 
   /**
@@ -276,6 +305,7 @@ public abstract class AbstractManagedStateImpl
   {
   }
 
+  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
   @Override
   public void committed(long l)
   {
@@ -283,7 +313,9 @@ public abstract class AbstractManagedStateImpl
       try {
         for (Bucket bucket : buckets) {
           if (bucket != null) {
-            bucket.committed(l);
+            synchronized (bucket) {
+              bucket.committed(l);
+            }
           }
         }
         dataManager.committed(operatorId, l);
@@ -293,14 +325,18 @@ public abstract class AbstractManagedStateImpl
     }
   }
 
+  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
   @Override
   public void teardown()
   {
     dataManager.teardown();
     timeBucketAssigner.teardown();
+    readerService.shutdownNow();
     for (Bucket bucket : buckets) {
       if (bucket != null) {
-        bucket.teardown();
+        synchronized (bucket) {
+          bucket.teardown();
+        }
       }
     }
     stateTracker.teardown();
@@ -312,19 +348,22 @@ public abstract class AbstractManagedStateImpl
     maxCacheSize = bytes;
   }
 
+  /**
+   *
+   * @return the optimal size of the cache that triggers eviction of committed data from memory.
+   */
   public long getCacheSize()
   {
     return maxCacheSize;
   }
 
+  /**
+   * Sets the {@link FileAccess} implementation.
+   * @param fileAccess specific implementation of FileAccess.
+   */
   public void setFileAccess(@NotNull FileAccess fileAccess)
   {
     this.fileAccess = Preconditions.checkNotNull(fileAccess);
-  }
-
-  public void setKeyComparator(@NotNull Comparator<Slice> keyComparator)
-  {
-    this.keyComparator = Preconditions.checkNotNull(keyComparator);
   }
 
   @Override
@@ -333,6 +372,11 @@ public abstract class AbstractManagedStateImpl
     return fileAccess;
   }
 
+  /**
+   * Sets the time bucket assigner. This can be used for plugging any custom time bucket assigner.
+   *
+   * @param timeBucketAssigner a {@link TimeBucketAssigner}
+   */
   public void setTimeBucketAssigner(@NotNull TimeBucketAssigner timeBucketAssigner)
   {
     this.timeBucketAssigner = Preconditions.checkNotNull(timeBucketAssigner);
@@ -349,27 +393,54 @@ public abstract class AbstractManagedStateImpl
     return keyComparator;
   }
 
+  /**
+   * Sets the key comparator. The keys on the disk in time bucket files are sorted. This sets the comparator for the
+   * key.
+   * @param keyComparator key comparator
+   */
+  public void setKeyComparator(@NotNull Comparator<Slice> keyComparator)
+  {
+    this.keyComparator = Preconditions.checkNotNull(keyComparator);
+  }
+
   @Override
   public BucketsMetaDataManager getBucketsMetaDataManager()
   {
     return bucketsMetaDataManager;
   }
 
+  /**
+   * @return number of worker threads in the reader service.
+   */
   public int getNumReaders()
   {
     return numReaders;
   }
 
+  /**
+   * Sets the number of worker threads in the reader service which is responsible for asynchronously fetching
+   * values of the keys. This should not exceed number of buckets.
+   *
+   * @param numReaders number of worker threads in the reader service.
+   */
   public void setNumReaders(int numReaders)
   {
     this.numReaders = numReaders;
   }
 
+  /**
+   * @return regular interval at which the size of state is checked.
+   */
   public Duration getCheckStateSizeInterval()
   {
     return checkStateSizeInterval;
   }
 
+  /**
+   * Sets the interval at which the size of state is regularly checked.
+
+   * @param checkStateSizeInterval regular interval at which the size of state is checked.
+   */
   public void setCheckStateSizeInterval(@NotNull Duration checkStateSizeInterval)
   {
     this.checkStateSizeInterval = Preconditions.checkNotNull(checkStateSizeInterval);
@@ -394,7 +465,11 @@ public abstract class AbstractManagedStateImpl
     public Slice call() throws Exception
     {
       try {
-        return bucket.get(key, timeBucketId, Bucket.ReadSource.READERS);
+        synchronized (bucket) {
+          //a particular bucket should only be handled by one thread at any point of time. Handling of bucket here
+          //involves creating readers for the time buckets and de-serializing key/value from a reader.
+          return bucket.get(key, timeBucketId, Bucket.ReadSource.ALL);
+        }
       } catch (Throwable t) {
         throwable.set(t);
         throw DTThrowable.wrapIfChecked(t);
@@ -443,11 +518,13 @@ public abstract class AbstractManagedStateImpl
       bucketHeap.add(bucketId);
     }
 
+    @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
     @Override
     public void run()
     {
       synchronized (managedState.commitLock) {
-        //free of bucket state needs to be stopped during commit
+        //freeing of state needs to be stopped during commit as commit results in transferring data to a state which
+        // can be freed up as well.
         long bytesSum = 0;
         for (Bucket bucket : managedState.buckets) {
           bytesSum += bucket.getSizeInBytes();
@@ -461,14 +538,16 @@ public abstract class AbstractManagedStateImpl
             Bucket bucket = managedState.getBucket(bucketId);
             if (bucket != null) {
 
-              long sizeFreed;
-              try {
-                sizeFreed = bucket.freeMemory();
-              } catch (IOException e) {
-                throwable.set(e);
-                throw new RuntimeException("freeing " + bucketId, e);
+              synchronized (bucket) {
+                long sizeFreed;
+                try {
+                  sizeFreed = bucket.freeMemory();
+                } catch (IOException e) {
+                  throwable.set(e);
+                  throw new RuntimeException("freeing " + bucketId, e);
+                }
+                bytesSum -= sizeFreed;
               }
-              bytesSum -= sizeFreed;
             }
           }
         }
