@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-@InterfaceStability.Stable
+@InterfaceStability.Unstable
 package com.datatorrent.lib.state;
 
 import org.apache.hadoop.classification.InterfaceStability;

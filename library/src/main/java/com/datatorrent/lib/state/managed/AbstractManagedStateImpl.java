@@ -22,8 +22,6 @@ import java.io.IOException;
 import java.lang.reflect.Array;
 import java.util.Comparator;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,10 +39,8 @@ import com.esotericsoftware.kryo.serializers.FieldSerializer;
 import com.esotericsoftware.kryo.serializers.JavaSerializer;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
-import com.google.common.collect.MinMaxPriorityQueue;
 import com.google.common.util.concurrent.Futures;
 
-import com.datatorrent.api.Component;
 import com.datatorrent.api.Context.DAGContext;
 import com.datatorrent.api.Context.OperatorContext;
 import com.datatorrent.api.Operator;
@@ -86,7 +82,7 @@ import com.datatorrent.netlet.util.Slice;
 public abstract class AbstractManagedStateImpl
     implements ManagedState, Operator, Operator.CheckpointListener, ManagedStateContext
 {
-  private long maxCacheSize;
+  private long maxMemorySize;
 
   protected int numBuckets;
 
@@ -98,8 +94,6 @@ public abstract class AbstractManagedStateImpl
   protected TimeBucketAssigner timeBucketAssigner = new TimeBucketAssigner();
 
   protected Bucket[] buckets;
-
-  private StateTracker tracker;
 
   @Min(1)
   private int numReaders = 10;
@@ -129,9 +123,13 @@ public abstract class AbstractManagedStateImpl
   private Duration checkStateSizeInterval = Duration.millis(
       DAGContext.STREAMING_WINDOW_SIZE_MILLIS.defaultValue * OperatorContext.APPLICATION_WINDOW_COUNT.defaultValue);
 
+  @FieldSerializer.Bind(JavaSerializer.class)
+  private Duration durationPreventingFreeingSpace;
+
   private transient StateTracker stateTracker;
 
-  private final transient Object commitLock = new Object();
+  //accessible to StateTracker
+  final transient Object commitLock = new Object();
 
   @Override
   public void setup(OperatorContext context)
@@ -175,7 +173,7 @@ public abstract class AbstractManagedStateImpl
 
     readerService = Executors.newFixedThreadPool(numReaders, new NameableThreadFactory("managedStateReaders"));
 
-    stateTracker = new StateTracker(this, throwable);
+    stateTracker = new StateTracker(this);
     stateTracker.setup(context);
   }
 
@@ -279,15 +277,18 @@ public abstract class AbstractManagedStateImpl
     }
   }
 
+  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
   protected void checkpointDifference()
   {
     Map<Long, Map<Slice, Bucket.BucketedValue>> flashData = Maps.newHashMap();
 
     for (Bucket bucket : buckets) {
       if (bucket != null) {
-        Map<Slice, Bucket.BucketedValue> flashDataForBucket = bucket.checkpoint(windowId);
-        if (!flashDataForBucket.isEmpty()) {
-          flashData.put(bucket.getBucketId(), flashDataForBucket);
+        synchronized (bucket) {
+          Map<Slice, Bucket.BucketedValue> flashDataForBucket = bucket.checkpoint(windowId);
+          if (!flashDataForBucket.isEmpty()) {
+            flashData.put(bucket.getBucketId(), flashDataForBucket);
+          }
         }
       }
     }
@@ -343,18 +344,18 @@ public abstract class AbstractManagedStateImpl
   }
 
   @Override
-  public void setCacheSize(long bytes)
+  public void setMaxMemorySize(long bytes)
   {
-    maxCacheSize = bytes;
+    maxMemorySize = bytes;
   }
 
   /**
    *
    * @return the optimal size of the cache that triggers eviction of committed data from memory.
    */
-  public long getCacheSize()
+  public long getMaxMemorySize()
   {
-    return maxCacheSize;
+    return maxMemorySize;
   }
 
   /**
@@ -446,6 +447,25 @@ public abstract class AbstractManagedStateImpl
     this.checkStateSizeInterval = Preconditions.checkNotNull(checkStateSizeInterval);
   }
 
+  /**
+   * @return duration which prevents a bucket being evicted.
+   */
+  public Duration getDurationPreventingFreeingSpace()
+  {
+    return durationPreventingFreeingSpace;
+  }
+
+  /**
+   * Sets the duration which prevents buckets to free space. For example if this is set to an hour, then only
+   * buckets which were not accessed in last one hour will be triggered to free spaces.
+   *
+   * @param durationPreventingFreeingSpace time duration
+   */
+  public void setDurationPreventingFreeingSpace(Duration durationPreventingFreeingSpace)
+  {
+    this.durationPreventingFreeingSpace = durationPreventingFreeingSpace;
+  }
+
   static class KeyFetchTask implements Callable<Slice>
   {
     private final Bucket bucket;
@@ -474,89 +494,6 @@ public abstract class AbstractManagedStateImpl
         throwable.set(t);
         throw DTThrowable.wrapIfChecked(t);
       }
-    }
-  }
-
-  static class StateTracker extends TimerTask implements Component<OperatorContext>
-  {
-    private final Map<Long, Long> bucketsLastAccessedTime = Maps.newConcurrentMap();
-
-    //bucket keys in the order they are accessed
-    private final MinMaxPriorityQueue<Long> bucketHeap = MinMaxPriorityQueue.orderedBy(
-        new Comparator<Long>()
-        {
-          @Override
-          public int compare(Long bucketId1, Long bucketId2)
-          {
-            return Long.compare(bucketsLastAccessedTime.get(bucketId1), bucketsLastAccessedTime.get(bucketId2));
-          }
-        })
-        .create();
-
-    private final Timer memoryFreeService = new Timer();
-
-    private final AbstractManagedStateImpl managedState;
-
-    private final AtomicReference<Throwable> throwable;
-
-    StateTracker(@NotNull AbstractManagedStateImpl managedState, @NotNull AtomicReference<Throwable> throwable)
-    {
-      this.managedState = Preconditions.checkNotNull(managedState, "managed state");
-      this.throwable = Preconditions.checkNotNull(throwable, "throwable");
-    }
-
-    @Override
-    public void setup(OperatorContext context)
-    {
-      long intervalMillis = managedState.getCheckStateSizeInterval().getMillis();
-      memoryFreeService.scheduleAtFixedRate(this, intervalMillis, intervalMillis);
-    }
-
-    void bucketAccessed(long bucketId)
-    {
-      bucketsLastAccessedTime.put(bucketId, System.currentTimeMillis());
-      bucketHeap.add(bucketId);
-    }
-
-    @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
-    @Override
-    public void run()
-    {
-      synchronized (managedState.commitLock) {
-        //freeing of state needs to be stopped during commit as commit results in transferring data to a state which
-        // can be freed up as well.
-        long bytesSum = 0;
-        for (Bucket bucket : managedState.buckets) {
-          bytesSum += bucket.getSizeInBytes();
-        }
-
-        while (bytesSum > managedState.maxCacheSize) {
-
-          //evict buckets from memory
-          Long bucketId = bucketHeap.poll();
-          if (bucketId != null) {
-            Bucket bucket = managedState.getBucket(bucketId);
-            if (bucket != null) {
-
-              synchronized (bucket) {
-                long sizeFreed;
-                try {
-                  sizeFreed = bucket.freeMemory();
-                } catch (IOException e) {
-                  throwable.set(e);
-                  throw new RuntimeException("freeing " + bucketId, e);
-                }
-                bytesSum -= sizeFreed;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    public void teardown()
-    {
-      memoryFreeService.cancel();
     }
   }
 
