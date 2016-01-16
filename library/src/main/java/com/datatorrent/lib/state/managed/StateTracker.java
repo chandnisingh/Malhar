@@ -21,6 +21,7 @@ package com.datatorrent.lib.state.managed;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,12 +29,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.validation.constraints.NotNull;
 
 import org.joda.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.common.collect.UnmodifiableIterator;
 
 import com.datatorrent.api.Component;
 import com.datatorrent.api.Context;
@@ -43,32 +42,35 @@ import com.datatorrent.api.Context;
  */
 class StateTracker extends TimerTask implements Component<Context.OperatorContext>
 {
-  //bucket keys in the order they are accessed
-  private final Map<Long, Long> bucketHeap = new ConcurrentHashMap<>();
+  //bucket id -> last time the bucket was accessed
+  private final transient ConcurrentHashMap<Long, Long> bucketAccessTimes = new ConcurrentHashMap<>();
 
-  private final Comparator<Map.Entry<Long, Long>> timeComparator = new Comparator<Map.Entry<Long, Long>>()
-  {
-    @Override
-    public int compare(Map.Entry<Long, Long> o1, Map.Entry<Long, Long> o2)
-    {
-      if (o1.getValue() < o2.getValue()) {
-        return -1;
-      }
-      if (o1.getValue() > o2.getValue()) {
-        return 1;
-      }
+  private final transient PriorityQueue<Map.Entry<Long, Long>> bucketHeap;
 
-      return Long.compare(o1.getKey(), o2.getKey());
-    }
-  };
+  private final transient Timer memoryFreeService = new Timer();
 
-  private final Timer memoryFreeService = new Timer();
-
-  private final AbstractManagedStateImpl managedState;
+  protected final transient AbstractManagedStateImpl managedState;
 
   StateTracker(@NotNull AbstractManagedStateImpl managedState)
   {
     this.managedState = Preconditions.checkNotNull(managedState, "managed state");
+    this.bucketHeap = new PriorityQueue<>(managedState.getNumBuckets(),
+        new Comparator<Map.Entry<Long, Long>>()
+        {
+
+          @Override
+          public int compare(Map.Entry<Long, Long> o1, Map.Entry<Long, Long> o2)
+          {
+            if (o1.getValue() < o2.getValue()) {
+              return -1;
+            }
+            if (o1.getValue() > o2.getValue()) {
+              return 1;
+            }
+
+            return Long.compare(o1.getKey(), o2.getKey());
+          }
+        });
   }
 
   @Override
@@ -80,7 +82,8 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
 
   void bucketAccessed(long bucketId)
   {
-    bucketHeap.put(bucketId, System.currentTimeMillis());
+    //avoiding any delays here because this is getting invoked anytime a bucket is accessed which is with every put/get.
+    bucketAccessTimes.put(bucketId, System.currentTimeMillis());
   }
 
   @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
@@ -92,20 +95,30 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
       // can be freed up as well.
       long bytesSum = 0;
       for (Bucket bucket : managedState.buckets) {
-        bytesSum += bucket.getSizeInBytes();
+        if (bucket != null) {
+          bytesSum += bucket.getSizeInBytes();
+        }
       }
-      UnmodifiableIterator<Map.Entry<Long, Long>> sortedEntryIterator = getTimeSortedEntries();
 
-      while (bytesSum > managedState.getMaxMemorySize() && sortedEntryIterator.hasNext()) {
+      if (bytesSum > managedState.getMaxMemorySize()) {
+        //populate the bucket heap
+        for (Map.Entry<Long, Long> entry : bucketAccessTimes.entrySet()) {
+          bucketHeap.add(entry);
+        }
+      }
+      Duration duration = managedState.getDurationPreventingFreeingSpace();
+      long durationMillis = 0;
+      if (duration != null) {
+        durationMillis = duration.getMillis();
+      }
 
-        //evict buckets from memory
+      Map.Entry<Long, Long> pair;
+      while (bytesSum > managedState.getMaxMemorySize() && null != (pair = bucketHeap.poll())) {
+        //trigger buckets to free space
 
-        Map.Entry<Long, Long> pair = sortedEntryIterator.next();
-
-        Duration duration = managedState.getDurationPreventingFreeingSpace();
-        if (duration != null && System.currentTimeMillis() - pair.getValue() < duration.getMillis()) {
+        if (System.currentTimeMillis() - pair.getValue() < durationMillis) {
           //if the least recently used bucket cannot free up space because it was accessed within the
-          //specified duration then subsequent buckets cannot free space as well because this set is ordered by time.
+          //specified duration then subsequent buckets cannot free space as well because this heap is ordered by time.
           break;
         }
         long bucketId = pair.getKey();
@@ -116,6 +129,7 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
             long sizeFreed;
             try {
               sizeFreed = bucket.freeMemory();
+              LOG.debug("size freed {} {}", bucketId, sizeFreed);
             } catch (IOException e) {
               managedState.throwable.set(e);
               throw new RuntimeException("freeing " + bucketId, e);
@@ -123,16 +137,10 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
             bytesSum -= sizeFreed;
           }
         }
-
-        bucketHeap.remove(bucketId);
+        bucketAccessTimes.remove(bucketId);
       }
+      bucketHeap.clear();
     }
-  }
-
-  @VisibleForTesting
-  UnmodifiableIterator<Map.Entry<Long, Long>> getTimeSortedEntries()
-  {
-    return ImmutableSortedSet.copyOf(timeComparator, bucketHeap.entrySet()).iterator();
   }
 
   public void teardown()
@@ -140,9 +148,6 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
     memoryFreeService.cancel();
   }
 
-  @VisibleForTesting
-  ImmutableMap<Long, Long> getImmutableCopyOfHeap()
-  {
-    return ImmutableMap.copyOf(bucketHeap);
-  }
+  private static final Logger LOG = LoggerFactory.getLogger(StateTracker.class);
+
 }

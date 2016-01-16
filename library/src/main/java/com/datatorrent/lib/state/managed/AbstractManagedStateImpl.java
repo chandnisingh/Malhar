@@ -19,7 +19,6 @@
 package com.datatorrent.lib.state.managed;
 
 import java.io.IOException;
-import java.lang.reflect.Array;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -96,7 +95,7 @@ public abstract class AbstractManagedStateImpl
   protected Bucket[] buckets;
 
   @Min(1)
-  private int numReaders = 10;
+  private int numReaders = 1;
   @NotNull
   protected transient ExecutorService readerService;
 
@@ -126,7 +125,7 @@ public abstract class AbstractManagedStateImpl
   @FieldSerializer.Bind(JavaSerializer.class)
   private Duration durationPreventingFreeingSpace;
 
-  private transient StateTracker stateTracker;
+  private transient StateTracker stateTracker = new StateTracker(this);
 
   //accessible to StateTracker
   final transient Object commitLock = new Object();
@@ -140,7 +139,7 @@ public abstract class AbstractManagedStateImpl
     timeBucketAssigner.setup(context);
 
     numBuckets = getNumBuckets();
-    buckets = (Bucket[])Array.newInstance(Bucket.class, numBuckets);
+    buckets = new Bucket[numBuckets];
 
     Preconditions.checkArgument(numReaders <= numBuckets, "no. of readers cannot exceed no. of buckets");
     //setup state data manager
@@ -172,8 +171,6 @@ public abstract class AbstractManagedStateImpl
     }
 
     readerService = Executors.newFixedThreadPool(numReaders, new NameableThreadFactory("managedStateReaders"));
-
-    stateTracker = new StateTracker(this);
     stateTracker.setup(context);
   }
 
@@ -192,7 +189,7 @@ public abstract class AbstractManagedStateImpl
     if (throwable.get() != null) {
       throw DTThrowable.wrapIfChecked(throwable.get());
     }
-
+    windowId = l;
     windowCount++;
     timeBucketAssigner.beginWindow(l);
     if (replay && l > largestRecoveryWindow) {
@@ -235,36 +232,36 @@ public abstract class AbstractManagedStateImpl
 
   /**
    * Prepares the bucket and returns its index.
-   * @param groupId bucket key
+   * @param bucketId bucket key
    * @return bucket index
    */
-  protected int prepareBucket(long groupId)
+  protected int prepareBucket(long bucketId)
   {
-    stateTracker.bucketAccessed(groupId);
-    int bucketIdx = getBucketIdx(groupId);
+    stateTracker.bucketAccessed(bucketId);
+    int bucketIdx = getBucketIdx(bucketId);
 
     Bucket bucket = buckets[bucketIdx];
     if (bucket == null) {
       //bucket is not in memory
-      bucket = newBucket(groupId);
+      bucket = newBucket(bucketId);
       buckets[bucketIdx] = bucket;
     }
     return bucketIdx;
   }
 
-  protected int getBucketIdx(long groupId)
+  protected int getBucketIdx(long bucketId)
   {
-    return (int)(groupId % numBuckets);
+    return (int)(bucketId % numBuckets);
   }
 
-  Bucket getBucket(long groupId)
+  Bucket getBucket(long bucketId)
   {
-    return buckets[getBucketIdx(groupId)];
+    return buckets[getBucketIdx(bucketId)];
   }
 
-  protected Bucket newBucket(long groupId)
+  protected Bucket newBucket(long bucketId)
   {
-    return new Bucket.DefaultBucket(groupId, this);
+    return new Bucket.DefaultBucket(bucketId, this);
   }
 
   @Override
@@ -341,6 +338,11 @@ public abstract class AbstractManagedStateImpl
       }
     }
     stateTracker.teardown();
+  }
+
+  public void setStateTracker(@NotNull StateTracker stateTracker)
+  {
+    this.stateTracker = Preconditions.checkNotNull(stateTracker, "state tracker");
   }
 
   @Override

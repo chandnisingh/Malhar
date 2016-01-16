@@ -19,6 +19,13 @@
 
 package com.datatorrent.lib.state.managed;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+
+import javax.validation.constraints.NotNull;
+
 import org.joda.time.Duration;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -26,27 +33,43 @@ import org.junit.Test;
 import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 
-import com.google.common.collect.ImmutableMap;
+import org.apache.commons.io.FileUtils;
+
+import com.google.common.collect.Lists;
+
+import com.datatorrent.api.Context;
+import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
+import com.datatorrent.netlet.util.Slice;
 
 public class StateTrackerTest
 {
   static class TestMeta extends TestWatcher
   {
-    StateTracker tracker;
-    ManagedStateImpl managedState;
+    MockManagedStateImpl managedState;
+    Context.OperatorContext operatorContext;
+    String applicationPath;
 
     @Override
     protected void starting(Description description)
     {
-      managedState = new ManagedStateImpl();
-      managedState.setDurationPreventingFreeingSpace(Duration.millis(500));
-      tracker = new StateTracker(managedState);
+      managedState = new MockManagedStateImpl();
+      applicationPath = "target/" + description.getClassName() + "/" + description.getMethodName();
+      ((FileAccessFSImpl)managedState.getFileAccess()).setBasePath(applicationPath + "/" + "bucket_data");
+
+      managedState.setNumBuckets(2);
+      managedState.setMaxMemorySize(100);
+
+      operatorContext = BucketsDataManagerTest.getOperatorContext(1, applicationPath);
     }
 
     @Override
     protected void finished(Description description)
     {
-      tracker.teardown();
+      try {
+        FileUtils.deleteDirectory(new File("target/" + description.getClassName()));
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
     }
   }
 
@@ -54,17 +77,96 @@ public class StateTrackerTest
   public TestMeta testMeta = new TestMeta();
 
   @Test
-  public void testAdd() throws InterruptedException
+  public void testEviction() throws InterruptedException
   {
-    testMeta.tracker.bucketAccessed(1);
-    long time1 = testMeta.tracker.getImmutableCopyOfHeap().get(1L);
-    Thread.sleep(500);
+    testMeta.managedState.latch = new CountDownLatch(1);
+    testMeta.managedState.setup(testMeta.operatorContext);
+    Slice one = DefaultBucketTest.getSliceFor("1");
+    testMeta.managedState.put(1, one, one);
+    testMeta.managedState.latch.await();
+    Assert.assertEquals("freed bucket", Lists.newArrayList(1L), testMeta.managedState.freedBuckets);
+  }
 
-    testMeta.tracker.bucketAccessed(1);
-    ImmutableMap<Long, Long> copy = testMeta.tracker.getImmutableCopyOfHeap();
-    Assert.assertEquals("size 1", 1, copy.size());
+  @Test
+  public void testMultipleEvictions() throws InterruptedException
+  {
+    testMeta.managedState.latch = new CountDownLatch(2);
+    testMeta.managedState.setup(testMeta.operatorContext);
+    Slice one = DefaultBucketTest.getSliceFor("1");
+    testMeta.managedState.put(1, one, one);
 
-    Assert.assertTrue("time update", time1 < copy.get(1L));
+    Slice two = DefaultBucketTest.getSliceFor("2");
+    testMeta.managedState.put(2, two, two);
+    testMeta.managedState.latch.await();
+    testMeta.managedState.teardown();
+    Assert.assertEquals("freed bucket", Lists.newArrayList(1L, 2L), testMeta.managedState.freedBuckets);
+  }
+
+  @Test
+  public void testBucketPrevention() throws InterruptedException
+  {
+    testMeta.managedState.setDurationPreventingFreeingSpace(Duration.standardDays(2));
+    testMeta.managedState.setStateTracker(new MockStateTracker(testMeta.managedState));
+    testMeta.managedState.latch = new CountDownLatch(1);
+
+    testMeta.managedState.setup(testMeta.operatorContext);
+    Slice one = DefaultBucketTest.getSliceFor("1");
+    testMeta.managedState.put(1, one, one);
+
+    Slice two = DefaultBucketTest.getSliceFor("2");
+    testMeta.managedState.put(2, two, two);
+    testMeta.managedState.teardown();
+    Assert.assertEquals("no buckets triggered", 0, testMeta.managedState.freedBuckets.size());
+  }
+
+  private static class MockManagedStateImpl extends ManagedStateImpl
+  {
+    CountDownLatch latch;
+    List<Long> freedBuckets = Lists.newArrayList();
+    protected Bucket newBucket(long bucketId)
+    {
+      return new MockDefaultBucket(bucketId, this);
+    }
+  }
+
+  private static class MockDefaultBucket extends Bucket.DefaultBucket
+  {
+    final MockManagedStateImpl mockManagedState;
+    protected MockDefaultBucket(long bucketId, @NotNull ManagedStateContext managedStateContext)
+    {
+      super(bucketId, managedStateContext);
+      mockManagedState = (MockManagedStateImpl)managedStateContext;
+    }
+
+    @Override
+    public long freeMemory() throws IOException
+    {
+      long freedBytes = super.freeMemory();
+      mockManagedState.freedBuckets.add(getBucketId());
+      mockManagedState.latch.countDown();
+      return freedBytes;
+    }
+
+    @Override
+    public long getSizeInBytes()
+    {
+      return 600;
+    }
+  }
+
+  private static class MockStateTracker extends StateTracker
+  {
+    MockStateTracker(@NotNull AbstractManagedStateImpl managedState)
+    {
+      super(managedState);
+    }
+
+    @Override
+    public void run()
+    {
+      super.run();
+      ((MockManagedStateImpl)managedState).latch.countDown();
+    }
   }
 
 }

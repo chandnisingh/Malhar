@@ -387,6 +387,7 @@ public interface Bucket extends Component<Context.OperatorContext>
     @Override
     public long freeMemory() throws IOException
     {
+      LOG.debug("free space {}", bucketId);
       long memoryFreed = 0;
       for (Map.Entry<Slice, BucketedValue> entry : committedData.entrySet()) {
         memoryFreed += entry.getKey().length + entry.getValue().getValue().length;

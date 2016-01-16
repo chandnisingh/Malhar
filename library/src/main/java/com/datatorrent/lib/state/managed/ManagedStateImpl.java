@@ -31,6 +31,11 @@ import com.datatorrent.netlet.util.Slice;
 @OperatorAnnotation(checkpointableWithinAppWindow = false)
 public class ManagedStateImpl extends AbstractManagedStateImpl implements BucketedState.TimeSlicedBucketedState
 {
+  public ManagedStateImpl()
+  {
+    this.numBuckets = 1;
+  }
+
   @Override
   public void put(long bucketId, long time, Slice key, Slice value)
   {
