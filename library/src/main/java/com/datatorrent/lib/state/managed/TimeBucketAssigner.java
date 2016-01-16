@@ -73,7 +73,10 @@ public class TimeBucketAssigner implements Operator
 
   private transient boolean isPaused = true;
   private transient ReentrantLock pauseLock = new ReentrantLock();
-  private transient Condition unpaused = pauseLock.newCondition();
+  private transient Condition resumedCondition = pauseLock.newCondition();
+
+  private transient boolean isRunning;
+  private transient Condition runEndedCondition = pauseLock.newCondition();
 
   @NotNull
   private final transient Set<Listener> listeners = Sets.newHashSet();
@@ -89,10 +92,13 @@ public class TimeBucketAssigner implements Operator
         pauseLock.lock();
         try {
           while (isPaused) {
-            unpaused.await();
+            resumedCondition.await();
+            isRunning = true;
           }
         } catch (InterruptedException e) {
           //interruption is expected by operator thread
+          isRunning = false;
+          continue;
         } finally {
           pauseLock.unlock();
         }
@@ -115,6 +121,13 @@ public class TimeBucketAssigner implements Operator
               //interruption is expected by operator thread
             }
           }
+        }
+
+        pauseLock.lock();
+        try {
+          runEndedCondition.signalAll();
+        } finally {
+          pauseLock.unlock();
         }
       }
     }
@@ -139,7 +152,7 @@ public class TimeBucketAssigner implements Operator
       startTime = fixedStartTime;
 
       bucketSpanMillis = bucketSpan.getMillis();
-      numBuckets = (int)Math.ceil((now - fixedStartTime) / (bucketSpanMillis * 1.0));
+      numBuckets = (int)((expireBefore.getMillis() + bucketSpanMillis - 1) / bucketSpanMillis);
       endTime = startTime + (numBuckets * bucketSpanMillis);
 
       initialized = true;
@@ -154,7 +167,7 @@ public class TimeBucketAssigner implements Operator
     pauseLock.lock();
     try {
       isPaused = false;
-      unpaused.signalAll();
+      resumedCondition.signalAll();
     } finally {
       pauseLock.unlock();
     }
@@ -166,6 +179,14 @@ public class TimeBucketAssigner implements Operator
     pauseLock.lock();
     try {
       isPaused = true;
+
+      while (isRunning) {
+        //this blocks end window to finish until expiry thread pauses
+        runEndedCondition.await();
+      }
+
+    } catch (InterruptedException e) {
+      throw new RuntimeException("interrupted in endWindow", e);
     } finally {
       pauseLock.unlock();
     }
@@ -190,13 +211,14 @@ public class TimeBucketAssigner implements Operator
     }
     long diffFromStart = value - fixedStartTime;
     long key = diffFromStart / bucketSpanMillis;
-    synchronized (lock) {
-      if (value > lend) {
-        long move = ((value - lend) / bucketSpanMillis + 1) * bucketSpanMillis;
+    if (value > lend) {
+      long move = ((value - lend) / bucketSpanMillis + 1) * bucketSpanMillis;
+      synchronized (lock) {
         startTime = lstart + move;
         endTime = lend + move;
       }
     }
+
     return key;
   }
 
