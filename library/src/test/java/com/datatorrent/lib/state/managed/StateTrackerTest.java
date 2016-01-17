@@ -81,7 +81,7 @@ public class StateTrackerTest
   {
     testMeta.managedState.latch = new CountDownLatch(1);
     testMeta.managedState.setup(testMeta.operatorContext);
-    Slice one = DefaultBucketTest.getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testMeta.managedState.put(1, one, one);
     testMeta.managedState.latch.await();
     testMeta.managedState.teardown();
@@ -93,10 +93,10 @@ public class StateTrackerTest
   {
     testMeta.managedState.latch = new CountDownLatch(2);
     testMeta.managedState.setup(testMeta.operatorContext);
-    Slice one = DefaultBucketTest.getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testMeta.managedState.put(1, one, one);
 
-    Slice two = DefaultBucketTest.getSliceFor("2");
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
     testMeta.managedState.put(2, two, two);
     testMeta.managedState.latch.await();
     testMeta.managedState.teardown();
@@ -111,10 +111,10 @@ public class StateTrackerTest
     testMeta.managedState.latch = new CountDownLatch(1);
 
     testMeta.managedState.setup(testMeta.operatorContext);
-    Slice one = DefaultBucketTest.getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testMeta.managedState.put(1, one, one);
 
-    Slice two = DefaultBucketTest.getSliceFor("2");
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
     testMeta.managedState.put(2, two, two);
     testMeta.managedState.teardown();
     Assert.assertEquals("no buckets triggered", 0, testMeta.managedState.freedBuckets.size());

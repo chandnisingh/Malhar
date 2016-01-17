@@ -72,7 +72,7 @@ public class DefaultBucketTest
   @Test
   public void testPut()
   {
-    Slice one = getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testMeta.defaultBucket.put(one, 1, one);
 
     Slice value = testMeta.defaultBucket.get(one, 1, Bucket.ReadSource.MEMORY);
@@ -87,10 +87,10 @@ public class DefaultBucketTest
   @Test
   public void testGetFromReader() throws IOException
   {
-    Slice one = getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
 
     BucketsDataManager bucketsDataManager = new BucketsDataManager(testMeta.managedStateContext);
-    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0);
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0, 100);
     bucketsDataManager.transferBucket(1, 1, unsavedBucket0);
 
     ManagedStateTestUtils.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 1, unsavedBucket0, 1);
@@ -102,10 +102,10 @@ public class DefaultBucketTest
   @Test
   public void testGetFromSpecificTimeBucket() throws IOException
   {
-    Slice one = getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
 
     BucketsDataManager bucketsDataManager = new BucketsDataManager(testMeta.managedStateContext);
-    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0);
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0, 100);
     bucketsDataManager.transferBucket(1, 1, unsavedBucket0);
 
     ManagedStateTestUtils.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 1, unsavedBucket0, 1);
@@ -117,7 +117,7 @@ public class DefaultBucketTest
   @Test
   public void testCheckpointed()
   {
-    Slice one = getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testPut();
     Map<Slice, Bucket.BucketedValue> unsaved = testMeta.defaultBucket.checkpoint(10);
     Assert.assertEquals("size", 1, unsaved.size());
@@ -131,7 +131,7 @@ public class DefaultBucketTest
   @Test
   public void testCommitted()
   {
-    Slice one = getSliceFor("1");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testCheckpointed();
     testMeta.defaultBucket.committed(10);
     Slice value = testMeta.defaultBucket.get(one, -1, Bucket.ReadSource.MEMORY);
@@ -145,8 +145,8 @@ public class DefaultBucketTest
     Map<Long, FileAccess.FileReader> readers = testMeta.defaultBucket.getReaders();
     Assert.assertTrue("reader open", readers.containsKey(101L));
 
-    Slice two = getSliceFor("2");
-    Slice one = getSliceFor("1");
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
 
     testMeta.defaultBucket.put(two, 101, two);
     Map<Slice, Bucket.BucketedValue> unsaved = testMeta.defaultBucket.checkpoint(10);
@@ -179,7 +179,7 @@ public class DefaultBucketTest
     testGetFromReader();
     long initSize = testMeta.defaultBucket.getSizeInBytes();
 
-    Slice two = getSliceFor("2");
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
     testMeta.defaultBucket.put(two, 101, two);
 
     Assert.assertEquals("size", initSize + (two.length * 2 + 64), testMeta.defaultBucket.getSizeInBytes());
@@ -187,11 +187,6 @@ public class DefaultBucketTest
     long sizeFreed = testMeta.defaultBucket.freeMemory();
     Assert.assertEquals("size freed", initSize, sizeFreed);
     Assert.assertEquals("existing size", (two.length * 2 + 64), testMeta.defaultBucket.getSizeInBytes());
-  }
-
-  static Slice getSliceFor(String x)
-  {
-    return new Slice(x.getBytes());
   }
 
 }

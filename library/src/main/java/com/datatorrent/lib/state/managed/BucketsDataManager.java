@@ -119,7 +119,7 @@ public class BucketsDataManager extends WindowDataManager.FSWindowDataManager im
         while (transfer) {
           transferWindowFiles();
           if (purgeTime.get() > 0) {
-            deleteFilesBefore(purgeTime.get());
+            deleteFilesBefore(purgeTime.getAndSet(0));
           }
         }
       }

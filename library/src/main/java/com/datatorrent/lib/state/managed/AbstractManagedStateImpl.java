@@ -101,7 +101,7 @@ public abstract class AbstractManagedStateImpl
   protected transient ExecutorService readerService;
 
   @NotNull
-  private final BucketsDataManager dataManager = new BucketsDataManager(this);
+  private BucketsDataManager dataManager = new BucketsDataManager(this);
 
   private final BucketsMetaDataManager bucketsMetaDataManager = new BucketsMetaDataManager(this);
 
@@ -341,12 +341,6 @@ public abstract class AbstractManagedStateImpl
     stateTracker.teardown();
   }
 
-  @VisibleForTesting
-  void setStateTracker(@NotNull StateTracker stateTracker)
-  {
-    this.stateTracker = Preconditions.checkNotNull(stateTracker, "state tracker");
-  }
-
   @Override
   public void setMaxMemorySize(long bytes)
   {
@@ -470,6 +464,25 @@ public abstract class AbstractManagedStateImpl
     this.durationPreventingFreeingSpace = durationPreventingFreeingSpace;
   }
 
+  /**
+   * @return incremental checkpoint window count.
+   */
+  public int getIncrementalCheckpointWindowCount()
+  {
+    return incrementalCheckpointWindowCount;
+  }
+
+  /**
+   * Sets the incremental checkpoint window count field which controls the no. of application windows at which
+   * the new data is checkpointed.
+   *
+   * @param incrementalCheckpointWindowCount incremental checkpoint window count
+   */
+  public void setIncrementalCheckpointWindowCount(int incrementalCheckpointWindowCount)
+  {
+    this.incrementalCheckpointWindowCount = incrementalCheckpointWindowCount;
+  }
+
   static class KeyFetchTask implements Callable<Slice>
   {
     private final Bucket bucket;
@@ -499,6 +512,18 @@ public abstract class AbstractManagedStateImpl
         throw DTThrowable.wrapIfChecked(t);
       }
     }
+  }
+
+  @VisibleForTesting
+  void setStateTracker(@NotNull StateTracker stateTracker)
+  {
+    this.stateTracker = Preconditions.checkNotNull(stateTracker, "state tracker");
+  }
+
+  @VisibleForTesting
+  void setDataManager(@NotNull BucketsDataManager bucketsDataManager)
+  {
+    this.dataManager = Preconditions.checkNotNull(bucketsDataManager, "buckets data manager");
   }
 
   private static final transient Logger LOG = LoggerFactory.getLogger(AbstractManagedStateImpl.class);

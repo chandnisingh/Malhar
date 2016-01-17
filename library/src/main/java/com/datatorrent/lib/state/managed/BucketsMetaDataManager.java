@@ -159,9 +159,8 @@ public class BucketsMetaDataManager
           }
           return immutableTimeBucketMetas;
         }
-      } else {
-        return null;
       }
+      return immutableTimeBucketMetas;
     }
   }
 

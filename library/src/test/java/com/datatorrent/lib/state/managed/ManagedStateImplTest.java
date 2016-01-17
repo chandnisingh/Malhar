@@ -21,6 +21,9 @@ package com.datatorrent.lib.state.managed;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 import org.junit.Assert;
 import org.junit.Rule;
@@ -35,6 +38,7 @@ import com.esotericsoftware.kryo.Kryo;
 import com.datatorrent.api.Context;
 import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
 import com.datatorrent.lib.util.TestUtils;
+import com.datatorrent.netlet.util.Slice;
 
 public class ManagedStateImplTest
 {
@@ -77,11 +81,130 @@ public class ManagedStateImplTest
   }
 
   @Test
-  public void testPut()
+  public void testSimplePutGet()
   {
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
     testMeta.managedState.setup(testMeta.operatorContext);
+    testMeta.managedState.beginWindow(System.currentTimeMillis());
+    testMeta.managedState.put(0, one, one);
+    Slice value = testMeta.managedState.getSync(0, one);
+    testMeta.managedState.endWindow();
 
+    Assert.assertEquals("value of one", one, value);
     testMeta.managedState.teardown();
   }
 
+  @Test
+  public void testAsyncGetFromFlash() throws ExecutionException, InterruptedException
+  {
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.setup(testMeta.operatorContext);
+    testMeta.managedState.beginWindow(System.currentTimeMillis());
+    testMeta.managedState.put(0, one, one);
+    Future<Slice> valFuture = testMeta.managedState.getAsync(0, one);
+    Slice value = valFuture.get();
+
+    Assert.assertEquals("value of one", one, value);
+    testMeta.managedState.teardown();
+  }
+
+  @Test
+  public void testIncrementalCheckpoint()
+  {
+    testMeta.managedState.setIncrementalCheckpointWindowCount(1);
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.setup(testMeta.operatorContext);
+    long time = System.currentTimeMillis();
+    testMeta.managedState.beginWindow(time);
+    testMeta.managedState.put(0, one, one);
+    testMeta.managedState.endWindow();
+
+    Bucket.DefaultBucket defaultBucket = (Bucket.DefaultBucket)testMeta.managedState.getBucket(0);
+    Assert.assertEquals("value of one", one, defaultBucket.getCheckpointedData().get(time).get(one).getValue());
+
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
+    testMeta.managedState.beginWindow(time + 1);
+    testMeta.managedState.put(0, two, two);
+    testMeta.managedState.endWindow();
+    Assert.assertEquals("value of two", two, defaultBucket.getCheckpointedData().get(time + 1).get(two).getValue());
+    testMeta.managedState.teardown();
+  }
+
+  @Test
+  public void testAsyncGetFromCheckpoint() throws ExecutionException, InterruptedException
+  {
+    testMeta.managedState.setIncrementalCheckpointWindowCount(1);
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.setup(testMeta.operatorContext);
+    long time = System.currentTimeMillis();
+    testMeta.managedState.beginWindow(time);
+    testMeta.managedState.put(0, one, one);
+    testMeta.managedState.endWindow();
+
+    Future<Slice> valFuture = testMeta.managedState.getAsync(0, one);
+    Assert.assertEquals("value of one", one, valFuture.get());
+    testMeta.managedState.teardown();
+  }
+
+  @Test
+  public void testCommitted()
+  {
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
+    commitHelper(one, two);
+    Bucket.DefaultBucket defaultBucket = (Bucket.DefaultBucket)testMeta.managedState.getBucket(0);
+    Assert.assertEquals("value of one", one, defaultBucket.getCommittedData().get(one).getValue());
+
+    Assert.assertNull("value of two", defaultBucket.getCommittedData().get(two));
+    testMeta.managedState.teardown();
+  }
+
+  @Test
+  public void testAsyncGetFromCommitted() throws ExecutionException, InterruptedException
+  {
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    Slice two = ManagedStateTestUtils.getSliceFor("2");
+    commitHelper(one, two);
+    Future<Slice> valFuture = testMeta.managedState.getAsync(0, one);
+    Assert.assertEquals("value of one", one, valFuture.get());
+  }
+
+  private void commitHelper(Slice one, Slice two)
+  {
+    testMeta.managedState.setIncrementalCheckpointWindowCount(1);
+
+    testMeta.managedState.setup(testMeta.operatorContext);
+    long time = System.currentTimeMillis();
+    testMeta.managedState.beginWindow(time);
+    testMeta.managedState.put(0, one, one);
+    testMeta.managedState.endWindow();
+
+    testMeta.managedState.beginWindow(time + 1);
+    testMeta.managedState.put(0, two, two);
+    testMeta.managedState.endWindow();
+
+    testMeta.managedState.committed(time);
+  }
+
+  @Test
+  public void testAsyncGetFromReaders() throws IOException, ExecutionException, InterruptedException
+  {
+    Slice zero = ManagedStateTestUtils.getSliceFor("0");
+    long time = System.currentTimeMillis();
+
+    //Save data to the file system.
+    BucketsDataManager dataManager = new BucketsDataManager(testMeta.managedState);
+    testMeta.managedState.getFileAccess().init();
+
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0, time);
+    dataManager.transferBucket(time, 0, unsavedBucket0);
+    ManagedStateTestUtils.transferBucketHelper(testMeta.managedState.getFileAccess(), 0, unsavedBucket0, 1);
+
+    testMeta.managedState.setDataManager(dataManager);
+    testMeta.managedState.setup(testMeta.operatorContext);
+    Future<Slice> valFuture = testMeta.managedState.getAsync(0, zero);
+
+    Assert.assertEquals("value of zero", zero, valFuture.get());
+    testMeta.managedState.teardown();
+  }
 }

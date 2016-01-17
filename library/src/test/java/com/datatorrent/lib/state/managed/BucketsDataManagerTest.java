@@ -140,7 +140,7 @@ public class BucketsDataManagerTest
   @Test
   public void testTransferBucket() throws IOException
   {
-    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0);
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0, 100);
     testMeta.dataManager.transferBucket(10, 0, unsavedBucket0);
 
     ManagedStateTestUtils.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 0, unsavedBucket0, 1);
@@ -149,10 +149,10 @@ public class BucketsDataManagerTest
   @Test
   public void testTransferOfExistingBucket() throws IOException
   {
-    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0);
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0, 100);
     testMeta.dataManager.transferBucket(10, 0, unsavedBucket0);
 
-    Map<Slice, Bucket.BucketedValue> more = ManagedStateTestUtils.getTestBucketData(50);
+    Map<Slice, Bucket.BucketedValue> more = ManagedStateTestUtils.getTestBucketData(50, 100);
     testMeta.dataManager.transferBucket(10, 0, more);
 
     unsavedBucket0.putAll(more);

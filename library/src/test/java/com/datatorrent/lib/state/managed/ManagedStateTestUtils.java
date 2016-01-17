@@ -87,18 +87,18 @@ public class ManagedStateTestUtils
   {
     Map<Long, Map<Slice, Bucket.BucketedValue>> data = Maps.newHashMap();
     for (int i = startBucket; i < endBucket; i++) {
-      Map<Slice, Bucket.BucketedValue> bucketData = getTestBucketData(keyStart);
+      Map<Slice, Bucket.BucketedValue> bucketData = getTestBucketData(keyStart, 100);
       data.put((long)i, bucketData);
     }
     return data;
   }
 
-  static Map<Slice, Bucket.BucketedValue> getTestBucketData(int keyStart)
+  static Map<Slice, Bucket.BucketedValue> getTestBucketData(int keyStart, long timeBucketStart)
   {
     Map<Slice, Bucket.BucketedValue> bucketData = Maps.newHashMap();
     for (int j = 0; j < 5; j++) {
       Slice keyVal = new Slice(Integer.toString(keyStart).getBytes());
-      bucketData.put(keyVal, new Bucket.BucketedValue(100 + j, keyVal));
+      bucketData.put(keyVal, new Bucket.BucketedValue(timeBucketStart + j, keyVal));
       keyStart++;
     }
     return bucketData;
@@ -118,4 +118,9 @@ public class ManagedStateTestUtils
   }
 
   private static final transient Logger LOG = LoggerFactory.getLogger(ManagedStateTestUtils.class);
+
+  static Slice getSliceFor(String x)
+  {
+    return new Slice(x.getBytes());
+  }
 }

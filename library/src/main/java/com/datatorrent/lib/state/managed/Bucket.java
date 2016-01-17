@@ -488,6 +488,18 @@ public interface Bucket extends Component<Context.OperatorContext>
       return readers;
     }
 
+    @VisibleForTesting
+    Map<Slice, BucketedValue> getCommittedData()
+    {
+      return committedData;
+    }
+
+    @VisibleForTesting
+    TreeMap<Long, Map<Slice, BucketedValue>> getCheckpointedData()
+    {
+      return checkpointedData;
+    }
+
     private static final Logger LOG = LoggerFactory.getLogger(DefaultBucket.class);
   }
 }
