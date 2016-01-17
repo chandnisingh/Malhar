@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import com.esotericsoftware.kryo.serializers.FieldSerializer;
 import com.esotericsoftware.kryo.serializers.JavaSerializer;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.Futures;
@@ -340,7 +341,8 @@ public abstract class AbstractManagedStateImpl
     stateTracker.teardown();
   }
 
-  public void setStateTracker(@NotNull StateTracker stateTracker)
+  @VisibleForTesting
+  void setStateTracker(@NotNull StateTracker stateTracker)
   {
     this.stateTracker = Preconditions.checkNotNull(stateTracker, "state tracker");
   }

@@ -19,7 +19,6 @@
 
 package com.datatorrent.lib.state.managed;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.Map;
@@ -40,12 +39,11 @@ import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.RemoteIterator;
 
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
 import com.google.common.base.Preconditions;
 
 import com.datatorrent.api.Context;
 import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
+import com.datatorrent.lib.util.TestUtils;
 import com.datatorrent.netlet.util.Slice;
 
 public class BucketsDataManagerTest
@@ -90,17 +88,11 @@ public class BucketsDataManagerTest
   public TestMeta testMeta = new TestMeta();
 
   @Test
-  public void testSerde()
+  public void testSerde() throws IOException
   {
     Kryo kryo = new Kryo();
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    Output output = new Output(baos);
-    kryo.writeObject(output, testMeta.dataManager);
-    output.close();
-
-    Input input = new Input(baos.toByteArray());
-    BucketsDataManager dataManager2 = kryo.readObject(input, BucketsDataManager.class);
-    Assert.assertNotNull("state window data manager", dataManager2);
+    BucketsDataManager deserialized = TestUtils.clone(kryo, testMeta.dataManager);
+    Assert.assertNotNull("state window data manager", deserialized);
   }
 
   @Test

@@ -24,6 +24,9 @@ import com.google.common.util.concurrent.Futures;
 
 import com.datatorrent.netlet.util.Slice;
 
+/**
+ * In this implementation of {@link ManagedState}, the buckets in memory are time-buckets.
+ */
 public class TimeManagedStateImpl extends AbstractManagedStateImpl
 {
 

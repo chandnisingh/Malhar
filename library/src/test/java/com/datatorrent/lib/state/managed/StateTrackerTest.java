@@ -84,6 +84,7 @@ public class StateTrackerTest
     Slice one = DefaultBucketTest.getSliceFor("1");
     testMeta.managedState.put(1, one, one);
     testMeta.managedState.latch.await();
+    testMeta.managedState.teardown();
     Assert.assertEquals("freed bucket", Lists.newArrayList(1L), testMeta.managedState.freedBuckets);
   }
 

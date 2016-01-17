@@ -19,7 +19,7 @@
 
 package com.datatorrent.lib.state.managed;
 
-import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -31,8 +31,8 @@ import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
+
+import com.datatorrent.lib.util.TestUtils;
 
 public class TimeBucketAssignerTest
 {
@@ -50,7 +50,6 @@ public class TimeBucketAssignerTest
     @Override
     protected void finished(Description description)
     {
-      timeBucketAssigner.teardown();
     }
   }
 
@@ -58,17 +57,11 @@ public class TimeBucketAssignerTest
   public TestMeta testMeta = new TestMeta();
 
   @Test
-  public void testSerde()
+  public void testSerde() throws IOException
   {
     Kryo kryo = new Kryo();
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    Output output = new Output(baos);
-    kryo.writeObject(output, testMeta.timeBucketAssigner);
-    output.close();
-
-    Input input = new Input(baos.toByteArray());
-    TimeBucketAssigner tba1 = kryo.readObject(input, TimeBucketAssigner.class);
-    Assert.assertNotNull("time bucket assigner", tba1);
+    TimeBucketAssigner deserialized = TestUtils.clone(kryo, testMeta.timeBucketAssigner);
+    Assert.assertNotNull("time bucket assigner", deserialized);
   }
 
   @Test
@@ -80,6 +73,7 @@ public class TimeBucketAssignerTest
     testMeta.timeBucketAssigner.setup(ManagedStateTestUtils.getOperatorContext(9));
 
     Assert.assertEquals("num buckets", 2, testMeta.timeBucketAssigner.getNumBuckets());
+    testMeta.timeBucketAssigner.teardown();
   }
 
   @Test
@@ -99,6 +93,7 @@ public class TimeBucketAssignerTest
 
     long expiredTime = referenceTime - Duration.standardMinutes(65).getMillis();
     Assert.assertEquals("time bucket", -1, testMeta.timeBucketAssigner.getTimeBucketFor(expiredTime));
+    testMeta.timeBucketAssigner.teardown();
   }
 
   @Test
@@ -123,6 +118,7 @@ public class TimeBucketAssignerTest
     int valueBeforeSleep = timesCalled.get();
     Thread.sleep(1000);
     Assert.assertEquals("value should not change", valueBeforeSleep, timesCalled.get());
+    testMeta.timeBucketAssigner.teardown();
   }
 
 }

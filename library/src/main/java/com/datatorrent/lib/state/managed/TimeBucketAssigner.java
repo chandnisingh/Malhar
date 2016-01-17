@@ -20,8 +20,6 @@ package com.datatorrent.lib.state.managed;
 
 import java.util.Calendar;
 import java.util.Set;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
 
 import javax.validation.constraints.NotNull;
 
@@ -33,6 +31,7 @@ import com.google.common.collect.Sets;
 
 import com.datatorrent.api.Context;
 import com.datatorrent.api.Operator;
+import com.datatorrent.lib.appdata.query.WindowBoundedService;
 
 /**
  * Keeps track of time buckets.<br/>
@@ -67,16 +66,7 @@ public class TimeBucketAssigner implements Operator
 
   private boolean initialized;
 
-  private transient long spinMillis;
-  private transient long lastAdvanceTime = System.currentTimeMillis();
-  private transient volatile boolean runExpiryTask;
-
-  private transient boolean isPaused = true;
-  private transient ReentrantLock pauseLock = new ReentrantLock();
-  private transient Condition resumedCondition = pauseLock.newCondition();
-
-  private transient boolean isRunning;
-  private transient Condition runEndedCondition = pauseLock.newCondition();
+  private transient WindowBoundedService windowBoundedService;
 
   @NotNull
   private final transient Set<Listener> listeners = Sets.newHashSet();
@@ -86,61 +76,21 @@ public class TimeBucketAssigner implements Operator
     @Override
     public void run()
     {
-      long time;
-      while (runExpiryTask) {
-
-        pauseLock.lock();
-        try {
-          while (isPaused) {
-            resumedCondition.await();
-            isRunning = true;
-          }
-        } catch (InterruptedException e) {
-          //interruption is expected by operator thread
-          isRunning = false;
-          continue;
-        } finally {
-          pauseLock.unlock();
-        }
-
-        if (runExpiryTask) {
-          time = System.currentTimeMillis();
-          if (time - lastAdvanceTime >= bucketSpanMillis) {
-            synchronized (lock) {
-              lastAdvanceTime = time;
-              startTime += bucketSpanMillis;
-              endTime += bucketSpanMillis;
-              for (Listener listener : listeners) {
-                listener.purgeTimeBucketsBefore(startTime);
-              }
-            }
-          } else {
-            try {
-              Thread.sleep(spinMillis);
-            } catch (InterruptedException e) {
-              //interruption is expected by operator thread
-            }
-          }
-        }
-
-        pauseLock.lock();
-        try {
-          runEndedCondition.signalAll();
-        } finally {
-          pauseLock.unlock();
+      synchronized (lock) {
+        startTime += bucketSpanMillis;
+        endTime += bucketSpanMillis;
+        for (Listener listener : listeners) {
+          listener.purgeTimeBucketsBefore(startTime);
         }
       }
     }
   };
-
-  private final transient Thread expiryThread = new Thread(expiryTask);
 
   private final transient Object lock = new Object();
 
   @Override
   public void setup(Context.OperatorContext context)
   {
-    spinMillis = context.getValue(Context.OperatorContext.SPIN_MILLIS);
     if (!initialized) {
       if (bucketSpan == null) {
         bucketSpan = Duration.millis(context.getValue(Context.OperatorContext.APPLICATION_WINDOW_COUNT) *
@@ -157,39 +107,20 @@ public class TimeBucketAssigner implements Operator
 
       initialized = true;
     }
-    runExpiryTask = true;
-    expiryThread.start();
+    windowBoundedService = new WindowBoundedService(bucketSpanMillis, expiryTask);
+    windowBoundedService.setup(context);
   }
 
   @Override
   public void beginWindow(long l)
   {
-    pauseLock.lock();
-    try {
-      isPaused = false;
-      resumedCondition.signalAll();
-    } finally {
-      pauseLock.unlock();
-    }
+    windowBoundedService.beginWindow(l);
   }
 
   @Override
   public void endWindow()
   {
-    pauseLock.lock();
-    try {
-      isPaused = true;
-
-      while (isRunning) {
-        //this blocks end window to finish until expiry thread pauses
-        runEndedCondition.await();
-      }
-
-    } catch (InterruptedException e) {
-      throw new RuntimeException("interrupted in endWindow", e);
-    } finally {
-      pauseLock.unlock();
-    }
+    windowBoundedService.endWindow();
   }
 
   /**
@@ -237,13 +168,7 @@ public class TimeBucketAssigner implements Operator
   @Override
   public void teardown()
   {
-    runExpiryTask = false;
-    try {
-      expiryThread.join(spinMillis);
-    } catch (InterruptedException e) {
-      //Current thread is interrupted while waiting for expiry thread to finish.
-      throw new RuntimeException("interrupted while waiting for expiry to finish", e);
-    }
+    windowBoundedService.teardown();
   }
 
   /**
