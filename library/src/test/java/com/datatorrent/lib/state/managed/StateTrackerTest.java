@@ -59,7 +59,7 @@ public class StateTrackerTest
       managedState.setNumBuckets(2);
       managedState.setMaxMemorySize(100);
 
-      operatorContext = BucketsDataManagerTest.getOperatorContext(1, applicationPath);
+      operatorContext = ManagedStateTestUtils.getOperatorContext(1, applicationPath);
     }
 
     @Override

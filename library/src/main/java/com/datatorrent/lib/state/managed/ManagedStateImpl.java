@@ -28,6 +28,10 @@ import com.datatorrent.api.annotation.OperatorAnnotation;
 import com.datatorrent.lib.state.BucketedState;
 import com.datatorrent.netlet.util.Slice;
 
+/**
+ * This implementation of {@link ManagedState} lets the client to specify the time for each key. The value of time
+ * is used to derive the time-bucket of a key.
+ */
 @OperatorAnnotation(checkpointableWithinAppWindow = false)
 public class ManagedStateImpl extends AbstractManagedStateImpl implements BucketedState.TimeSlicedBucketedState
 {
@@ -89,6 +93,11 @@ public class ManagedStateImpl extends AbstractManagedStateImpl implements Bucket
     return numBuckets;
   }
 
+  /**
+   * Sets the number of buckets.
+   *
+   * @param numBuckets number of buckets
+   */
   public void setNumBuckets(int numBuckets)
   {
     this.numBuckets = numBuckets;

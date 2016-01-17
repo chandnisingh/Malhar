@@ -90,10 +90,10 @@ public class DefaultBucketTest
     Slice one = getSliceFor("1");
 
     BucketsDataManager bucketsDataManager = new BucketsDataManager(testMeta.managedStateContext);
-    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = BucketsDataManagerTest.getTestBucketData(0);
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0);
     bucketsDataManager.transferBucket(1, 1, unsavedBucket0);
 
-    BucketsDataManagerTest.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 1, unsavedBucket0, 1);
+    ManagedStateTestUtils.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 1, unsavedBucket0, 1);
 
     Slice value = testMeta.defaultBucket.get(one, -1, Bucket.ReadSource.READERS);
     Assert.assertEquals("value one", one, value);
@@ -105,10 +105,10 @@ public class DefaultBucketTest
     Slice one = getSliceFor("1");
 
     BucketsDataManager bucketsDataManager = new BucketsDataManager(testMeta.managedStateContext);
-    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = BucketsDataManagerTest.getTestBucketData(0);
+    Map<Slice, Bucket.BucketedValue> unsavedBucket0 = ManagedStateTestUtils.getTestBucketData(0);
     bucketsDataManager.transferBucket(1, 1, unsavedBucket0);
 
-    BucketsDataManagerTest.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 1, unsavedBucket0, 1);
+    ManagedStateTestUtils.transferBucketHelper(testMeta.managedStateContext.getFileAccess(), 1, unsavedBucket0, 1);
 
     Slice value = testMeta.defaultBucket.get(one, 101, Bucket.ReadSource.READERS);
     Assert.assertEquals("value one", one, value);

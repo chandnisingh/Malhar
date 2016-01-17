@@ -45,7 +45,7 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
   //bucket id -> last time the bucket was accessed
   private final transient ConcurrentHashMap<Long, Long> bucketAccessTimes = new ConcurrentHashMap<>();
 
-  private final transient PriorityQueue<Map.Entry<Long, Long>> bucketHeap;
+  private transient PriorityQueue<Map.Entry<Long, Long>> bucketHeap;
 
   private final transient Timer memoryFreeService = new Timer();
 
@@ -54,6 +54,11 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
   StateTracker(@NotNull AbstractManagedStateImpl managedState)
   {
     this.managedState = Preconditions.checkNotNull(managedState, "managed state");
+  }
+
+  @Override
+  public void setup(Context.OperatorContext context)
+  {
     this.bucketHeap = new PriorityQueue<>(managedState.getNumBuckets(),
         new Comparator<Map.Entry<Long, Long>>()
         {
@@ -71,11 +76,6 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
             return Long.compare(o1.getKey(), o2.getKey());
           }
         });
-  }
-
-  @Override
-  public void setup(Context.OperatorContext context)
-  {
     long intervalMillis = managedState.getCheckStateSizeInterval().getMillis();
     memoryFreeService.scheduleAtFixedRate(this, intervalMillis, intervalMillis);
   }

@@ -34,10 +34,6 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 
-import com.datatorrent.api.Attribute;
-import com.datatorrent.api.Context;
-import com.datatorrent.lib.helper.OperatorContextTestHelper;
-
 public class TimeBucketAssignerTest
 {
 
@@ -81,7 +77,7 @@ public class TimeBucketAssignerTest
     testMeta.timeBucketAssigner.setExpireBefore(Duration.standardHours(1));
     testMeta.timeBucketAssigner.setBucketSpan(Duration.standardMinutes(30));
 
-    testMeta.timeBucketAssigner.setup(getOperatorContext(9));
+    testMeta.timeBucketAssigner.setup(ManagedStateTestUtils.getOperatorContext(9));
 
     Assert.assertEquals("num buckets", 2, testMeta.timeBucketAssigner.getNumBuckets());
   }
@@ -93,7 +89,7 @@ public class TimeBucketAssignerTest
     testMeta.timeBucketAssigner.setBucketSpan(Duration.standardMinutes(30));
 
     long referenceTime = System.currentTimeMillis();
-    testMeta.timeBucketAssigner.setup(getOperatorContext(9));
+    testMeta.timeBucketAssigner.setup(ManagedStateTestUtils.getOperatorContext(9));
 
     long time1 = referenceTime - Duration.standardMinutes(2).getMillis();
     Assert.assertEquals("time bucket", 1, testMeta.timeBucketAssigner.getTimeBucketFor(time1));
@@ -120,7 +116,7 @@ public class TimeBucketAssignerTest
       }
     });
 
-    testMeta.timeBucketAssigner.setup(getOperatorContext(9));
+    testMeta.timeBucketAssigner.setup(ManagedStateTestUtils.getOperatorContext(9));
     testMeta.timeBucketAssigner.beginWindow(0);
     latch.await();
     testMeta.timeBucketAssigner.endWindow();
@@ -129,9 +125,4 @@ public class TimeBucketAssignerTest
     Assert.assertEquals("value should not change", valueBeforeSleep, timesCalled.get());
   }
 
-  static Context.OperatorContext getOperatorContext(int operatorId)
-  {
-    Attribute.AttributeMap.DefaultAttributeMap attributes = new Attribute.AttributeMap.DefaultAttributeMap();
-    return new OperatorContextTestHelper.TestIdOperatorContext(operatorId, attributes);
-  }
 }
