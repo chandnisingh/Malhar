@@ -36,7 +36,6 @@ public class TimeManagedStateImpl extends AbstractManagedStateImpl
     return timeBucketAssigner.getNumBuckets();
   }
 
-
   @Override
   public void put(long bucketId, Slice key, Slice value)
   {

@@ -81,8 +81,12 @@ public class StateTrackerTest
   {
     testMeta.managedState.latch = new CountDownLatch(1);
     testMeta.managedState.setup(testMeta.operatorContext);
+
     Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.beginWindow(System.currentTimeMillis());
     testMeta.managedState.put(1, one, one);
+    testMeta.managedState.endWindow();
+
     testMeta.managedState.latch.await();
     testMeta.managedState.teardown();
     Assert.assertEquals("freed bucket", Lists.newArrayList(1L), testMeta.managedState.freedBuckets);
@@ -93,11 +97,15 @@ public class StateTrackerTest
   {
     testMeta.managedState.latch = new CountDownLatch(2);
     testMeta.managedState.setup(testMeta.operatorContext);
+
     Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.beginWindow(System.currentTimeMillis());
     testMeta.managedState.put(1, one, one);
 
     Slice two = ManagedStateTestUtils.getSliceFor("2");
     testMeta.managedState.put(2, two, two);
+    testMeta.managedState.endWindow();
+
     testMeta.managedState.latch.await();
     testMeta.managedState.teardown();
     Assert.assertEquals("freed bucket", Lists.newArrayList(1L, 2L), testMeta.managedState.freedBuckets);
@@ -112,10 +120,14 @@ public class StateTrackerTest
 
     testMeta.managedState.setup(testMeta.operatorContext);
     Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.beginWindow(System.currentTimeMillis());
     testMeta.managedState.put(1, one, one);
 
     Slice two = ManagedStateTestUtils.getSliceFor("2");
     testMeta.managedState.put(2, two, two);
+    testMeta.managedState.endWindow();
+
+    testMeta.managedState.latch.await();
     testMeta.managedState.teardown();
     Assert.assertEquals("no buckets triggered", 0, testMeta.managedState.freedBuckets.size());
   }
@@ -124,6 +136,8 @@ public class StateTrackerTest
   {
     CountDownLatch latch;
     List<Long> freedBuckets = Lists.newArrayList();
+
+    @Override
     protected Bucket newBucket(long bucketId)
     {
       return new MockDefaultBucket(bucketId, this);

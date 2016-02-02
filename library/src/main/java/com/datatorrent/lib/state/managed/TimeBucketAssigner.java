@@ -29,8 +29,8 @@ import com.esotericsoftware.kryo.serializers.FieldSerializer;
 import com.esotericsoftware.kryo.serializers.JavaSerializer;
 import com.google.common.collect.Sets;
 
+import com.datatorrent.api.Component;
 import com.datatorrent.api.Context;
-import com.datatorrent.api.Operator;
 import com.datatorrent.lib.appdata.query.WindowBoundedService;
 
 /**
@@ -48,7 +48,7 @@ import com.datatorrent.lib.appdata.query.WindowBoundedService;
  * The time boundaries- start and end, periodically move by span of a single time-bucket. Any event with time < start
  * is expired. These boundaries slide between application window by another thread and not the operator thread.
  */
-public class TimeBucketAssigner implements Operator
+public class TimeBucketAssigner implements Component<Context.OperatorContext>
 {
   @NotNull
   @FieldSerializer.Bind(JavaSerializer.class)
@@ -111,13 +111,11 @@ public class TimeBucketAssigner implements Operator
     windowBoundedService.setup(context);
   }
 
-  @Override
   public void beginWindow(long l)
   {
     windowBoundedService.beginWindow(l);
   }
 
-  @Override
   public void endWindow()
   {
     windowBoundedService.endWindow();

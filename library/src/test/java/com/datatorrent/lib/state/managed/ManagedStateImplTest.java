@@ -207,4 +207,35 @@ public class ManagedStateImplTest
     Assert.assertEquals("value of zero", zero, valFuture.get());
     testMeta.managedState.teardown();
   }
+
+  @Test
+  public void testPutGetWithTime()
+  {
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.setup(testMeta.operatorContext);
+    long time = System.currentTimeMillis();
+    testMeta.managedState.beginWindow(0);
+    testMeta.managedState.put(0, time, one, one);
+    Slice value = testMeta.managedState.getSync(0, time, one);
+    testMeta.managedState.endWindow();
+
+    Assert.assertEquals("value of one", one, value);
+    testMeta.managedState.teardown();
+  }
+
+  @Test
+  public void testAsyncGetWithTime() throws ExecutionException, InterruptedException
+  {
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.setup(testMeta.operatorContext);
+    long time = System.currentTimeMillis();
+    testMeta.managedState.beginWindow(0);
+    testMeta.managedState.put(0, time, one, one);
+    Future<Slice> valFuture = testMeta.managedState.getAsync(0, time, one);
+    Slice value = valFuture.get();
+
+    Assert.assertEquals("value of one", one, value);
+    testMeta.managedState.teardown();
+
+  }
 }

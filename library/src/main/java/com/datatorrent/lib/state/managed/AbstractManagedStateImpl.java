@@ -41,6 +41,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.Futures;
 
+import com.datatorrent.api.Component;
 import com.datatorrent.api.Context.DAGContext;
 import com.datatorrent.api.Context.OperatorContext;
 import com.datatorrent.api.Operator;
@@ -80,7 +81,7 @@ import com.datatorrent.netlet.util.Slice;
  * The implementations of put, getSync and getAsync here use windowId as the time field to derive timeBucket of a key.
  */
 public abstract class AbstractManagedStateImpl
-    implements ManagedState, Operator, Operator.CheckpointListener, ManagedStateContext
+    implements ManagedState, Component<OperatorContext>, Operator.CheckpointListener, ManagedStateContext
 {
   private long maxMemorySize;
 
@@ -184,7 +185,6 @@ public abstract class AbstractManagedStateImpl
    */
   public abstract int getNumBuckets();
 
-  @Override
   public void beginWindow(long l)
   {
     if (throwable.get() != null) {
@@ -204,9 +204,9 @@ public abstract class AbstractManagedStateImpl
     if (replay) {
       return;
     }
-    int bucketIdx = prepareBucket(bucketId);
     long timeBucket = timeBucketAssigner.getTimeBucketFor(windowId);
     if (timeBucket != -1) {
+      int bucketIdx = prepareBucket(bucketId);
       buckets[bucketIdx].put(key, timeBucket, value);
     }
   }
@@ -265,7 +265,6 @@ public abstract class AbstractManagedStateImpl
     return new Bucket.DefaultBucket(bucketId, this);
   }
 
-  @Override
   public void endWindow()
   {
     timeBucketAssigner.endWindow();
