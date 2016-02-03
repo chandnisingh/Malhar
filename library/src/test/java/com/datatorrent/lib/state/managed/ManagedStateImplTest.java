@@ -33,11 +33,9 @@ import org.junit.runner.Description;
 
 import org.apache.commons.io.FileUtils;
 
-import com.esotericsoftware.kryo.Kryo;
-
 import com.datatorrent.api.Context;
 import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
-import com.datatorrent.lib.util.TestUtils;
+import com.datatorrent.lib.util.KryoCloneUtils;
 import com.datatorrent.netlet.util.Slice;
 
 public class ManagedStateImplTest
@@ -75,8 +73,7 @@ public class ManagedStateImplTest
   @Test
   public void testSerde() throws IOException
   {
-    Kryo kryo = new Kryo();
-    ManagedStateImpl deserialized = TestUtils.clone(kryo, testMeta.managedState);
+    ManagedStateImpl deserialized = KryoCloneUtils.cloneObject(testMeta.managedState);
     Assert.assertEquals("num buckets", deserialized.getNumBuckets(), testMeta.managedState.getNumBuckets());
   }
 

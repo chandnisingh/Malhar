@@ -38,12 +38,11 @@ import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.RemoteIterator;
 
-import com.esotericsoftware.kryo.Kryo;
 import com.google.common.base.Preconditions;
 
 import com.datatorrent.api.Context;
 import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
-import com.datatorrent.lib.util.TestUtils;
+import com.datatorrent.lib.util.KryoCloneUtils;
 import com.datatorrent.netlet.util.Slice;
 
 public class BucketsDataManagerTest
@@ -90,8 +89,7 @@ public class BucketsDataManagerTest
   @Test
   public void testSerde() throws IOException
   {
-    Kryo kryo = new Kryo();
-    BucketsDataManager deserialized = TestUtils.clone(kryo, testMeta.dataManager);
+    BucketsDataManager deserialized = KryoCloneUtils.cloneObject(testMeta.dataManager);
     Assert.assertNotNull("state window data manager", deserialized);
   }
 

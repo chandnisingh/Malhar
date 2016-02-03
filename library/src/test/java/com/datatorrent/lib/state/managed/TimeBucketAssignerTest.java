@@ -30,9 +30,7 @@ import org.junit.Test;
 import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 
-import com.esotericsoftware.kryo.Kryo;
-
-import com.datatorrent.lib.util.TestUtils;
+import com.datatorrent.lib.util.KryoCloneUtils;
 
 public class TimeBucketAssignerTest
 {
@@ -59,8 +57,7 @@ public class TimeBucketAssignerTest
   @Test
   public void testSerde() throws IOException
   {
-    Kryo kryo = new Kryo();
-    TimeBucketAssigner deserialized = TestUtils.clone(kryo, testMeta.timeBucketAssigner);
+    TimeBucketAssigner deserialized = KryoCloneUtils.cloneObject(testMeta.timeBucketAssigner);
     Assert.assertNotNull("time bucket assigner", deserialized);
   }
 
