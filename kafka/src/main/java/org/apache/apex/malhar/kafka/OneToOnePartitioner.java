@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.kafka.common.PartitionInfo;
 
 import com.google.common.collect.Sets;
@@ -30,7 +31,10 @@ import com.google.common.collect.Sets;
 /**
  * An one-to-one partitioner implementation that always returns same amount of operator partitions as
  * Kafka partitions for the topics that operator subscribe
+ *
+ * @since 3.3.0
  */
+@InterfaceStability.Evolving
 public class OneToOnePartitioner extends AbstractKafkaPartitioner
 {
 

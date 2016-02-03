@@ -18,7 +18,6 @@
  */
 package org.apache.apex.malhar.kafka;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -33,19 +32,18 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.hadoop.classification.InterfaceStability;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
 import com.google.common.base.Joiner;
 
 import com.datatorrent.api.DefaultPartition;
 import com.datatorrent.api.Partitioner;
 import com.datatorrent.api.StatsListener;
+import com.datatorrent.lib.util.KryoCloneUtils;
 
 /**
  * Abstract partitioner used to manage the partitions of kafka input operator.
@@ -53,7 +51,10 @@ import com.datatorrent.api.StatsListener;
  * the consumer subscribes and expose those to subclass which implements the assign method
  *
  * The partitioner is always stateless.
+ *
+ * @since 3.3.0
  */
+@InterfaceStability.Evolving
 public abstract class AbstractKafkaPartitioner implements Partitioner<AbstractKafkaInputOperator>, StatsListener
 {
 
@@ -159,14 +160,7 @@ public abstract class AbstractKafkaPartitioner implements Partitioner<AbstractKa
 
   protected Partitioner.Partition<AbstractKafkaInputOperator> createPartition(Set<AbstractKafkaPartitioner.PartitionMeta> partitionAssignment)
   {
-    Kryo kryo = new Kryo();
-    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-    Output output = new Output(bos);
-    kryo.writeObject(output, prototypeOperator);
-    output.close();
-    Input lInput = new Input(bos.toByteArray());
-    Partitioner.Partition<AbstractKafkaInputOperator> p = (Partitioner.Partition<AbstractKafkaInputOperator>)
-        new DefaultPartition<>(kryo.readObject(lInput, prototypeOperator.getClass()));
+    Partitioner.Partition<AbstractKafkaInputOperator> p = new DefaultPartition<AbstractKafkaInputOperator>(KryoCloneUtils.cloneObject(prototypeOperator));
     p.getPartitionedInstance().assign(partitionAssignment);
     return p;
   }
@@ -272,7 +266,7 @@ public abstract class AbstractKafkaPartitioner implements Partitioner<AbstractKa
     {
       return "PartitionMeta{" +
         "cluster='" + cluster + '\'' +
-        ", topicPartition=" + topicPartition +
+        ", topicPartition=" + getTopicPartition() +
         '}';
     }
   }
