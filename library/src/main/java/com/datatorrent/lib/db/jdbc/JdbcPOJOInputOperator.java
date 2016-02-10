@@ -39,7 +39,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-
+import com.datatorrent.api.AutoMetric;
 import com.datatorrent.api.Context;
 import com.datatorrent.api.DefaultOutputPort;
 import com.datatorrent.api.Operator;
@@ -64,6 +64,7 @@ import com.datatorrent.lib.util.PojoUtils;
  * @tags database, sql, pojo, jdbc
  * @since 2.1.0
  */
+@org.apache.hadoop.classification.InterfaceStability.Evolving
 public class JdbcPOJOInputOperator extends AbstractJdbcInputOperator<Object>
     implements Operator.ActivationListener<Context.OperatorContext>
 {
@@ -95,7 +96,9 @@ public class JdbcPOJOInputOperator extends AbstractJdbcInputOperator<Object>
   protected transient Class<?> pojoClass;
 
   protected int pageNumber;
-  private transient long sleepMillis;
+
+  @AutoMetric
+  protected long tuplesRead;
 
   @OutputPortFieldAnnotation(schemaRequired = true)
   public final transient DefaultOutputPort<Object> outputPort = new DefaultOutputPort<Object>()
@@ -119,7 +122,6 @@ public class JdbcPOJOInputOperator extends AbstractJdbcInputOperator<Object>
   public void setup(Context.OperatorContext context)
   {
     Preconditions.checkArgument(query != null || tableName != null, "both query and table name are not set");
-    sleepMillis = context.getValue(Context.OperatorContext.SPIN_MILLIS);
     super.setup(context);
 
     try {
@@ -186,6 +188,7 @@ public class JdbcPOJOInputOperator extends AbstractJdbcInputOperator<Object>
   public void beginWindow(long l)
   {
     windowDone = false;
+    tuplesRead = 0;
   }
 
   @Override
@@ -199,6 +202,7 @@ public class JdbcPOJOInputOperator extends AbstractJdbcInputOperator<Object>
           do {
             Object tuple = getTuple(resultSet);
             outputPort.emit(tuple);
+            tuplesRead++;
           }
           while (resultSet.next());
         } else {
@@ -209,12 +213,6 @@ public class JdbcPOJOInputOperator extends AbstractJdbcInputOperator<Object>
       } catch (SQLException ex) {
         store.disconnect();
         throw new RuntimeException(ex);
-      }
-    } else {
-      try {
-        Thread.sleep(sleepMillis);
-      } catch (InterruptedException e) {
-        throw new RuntimeException(e);
       }
     }
   }

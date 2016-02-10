@@ -18,24 +18,26 @@
  */
 package com.datatorrent.lib.io;
 
-import com.datatorrent.api.Context.OperatorContext;
+import java.io.IOException;
+import java.net.URI;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+
+import org.codehaus.jackson.JsonFactory;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.commons.lang3.ClassUtils;
+
 import com.ning.http.client.AsyncHttpClient;
 import com.ning.http.client.AsyncHttpClientConfigBean;
 import com.ning.http.client.websocket.WebSocket;
 import com.ning.http.client.websocket.WebSocketTextListener;
 import com.ning.http.client.websocket.WebSocketUpgradeHandler;
 
-import java.io.IOException;
-import java.net.URI;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import javax.validation.constraints.NotNull;
-import org.apache.commons.lang3.ClassUtils;
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.datatorrent.api.Context.OperatorContext;
 
 /**
  * Reads via WebSocket from given URL as input stream.&nbsp;

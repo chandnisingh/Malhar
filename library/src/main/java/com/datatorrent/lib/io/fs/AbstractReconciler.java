@@ -55,6 +55,7 @@ import com.datatorrent.common.util.NameableThreadFactory;
  * @param <QUEUETUPLE> tuple enqueued each window to be processed after window is committed
  * @since 2.0.0
  */
+@org.apache.hadoop.classification.InterfaceStability.Evolving
 public abstract class AbstractReconciler<INPUT, QUEUETUPLE> extends BaseOperator implements CheckpointListener, IdleTimeHandler
 {
   private static final Logger logger = LoggerFactory.getLogger(AbstractReconciler.class);
@@ -73,8 +74,8 @@ public abstract class AbstractReconciler<INPUT, QUEUETUPLE> extends BaseOperator
   // this stores the mapping from the window to the list of enqueued tuples
   private Map<Long, List<QUEUETUPLE>> currentWindowTuples = Maps.newConcurrentMap();
   private Queue<Long> currentWindows = Queues.newLinkedBlockingQueue();
-  private Queue<QUEUETUPLE> committedTuples = Queues.newLinkedBlockingQueue();
-  private transient Queue<QUEUETUPLE> doneTuples = Queues.newLinkedBlockingQueue();
+  protected Queue<QUEUETUPLE> committedTuples = Queues.newLinkedBlockingQueue();
+  protected transient Queue<QUEUETUPLE> doneTuples = Queues.newLinkedBlockingQueue();
   private transient Queue<QUEUETUPLE> waitingTuples = Queues.newLinkedBlockingQueue();
   private transient volatile boolean execute;
   private transient AtomicReference<Throwable> cause;
@@ -185,7 +186,6 @@ public abstract class AbstractReconciler<INPUT, QUEUETUPLE> extends BaseOperator
       }
     };
   }
-
   /**
    * The implementation class should call this method to enqueue output once input is converted to queue input.
    *

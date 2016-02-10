@@ -56,6 +56,7 @@ import com.datatorrent.lib.io.fs.AbstractFileInputOperator;
  *
  * @since 2.0.0
  */
+@org.apache.hadoop.classification.InterfaceStability.Evolving
 public abstract class AbstractFTPInputOperator<T> extends AbstractFileInputOperator<T>
 {
   @NotNull

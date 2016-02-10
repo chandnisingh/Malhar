@@ -26,13 +26,17 @@
   <parent>
     <groupId>org.apache.apex</groupId>
     <artifactId>malhar</artifactId>
-    <version>3.3.0-incubating-SNAPSHOT</version>
+    <version>3.4.0-incubating-SNAPSHOT</version>
   </parent>
 
   <artifactId>malhar-samples</artifactId>
   <packaging>jar</packaging>
 
   <name>Apache Apex Malhar (incubating) Samples</name>
+
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
 
   <dependencies>
     <dependency>
