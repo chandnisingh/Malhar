@@ -182,6 +182,14 @@
         <groupId>com.github.siom79.japicmp</groupId>
         <artifactId>japicmp-maven-plugin</artifactId>
       </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <configuration>
+          <maxAllowedViolations>15966</maxAllowedViolations>
+          <consoleOutput>false</consoleOutput>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 
@@ -313,6 +321,11 @@
       <groupId>joda-time</groupId>
       <artifactId>joda-time</artifactId>
       <version>2.9.1</version>
+    </dependency>
+    <dependency>
+      <groupId>it.unimi.dsi</groupId>
+      <artifactId>fastutil</artifactId>
+      <version>7.0.6</version>
     </dependency>
 
   </dependencies>
