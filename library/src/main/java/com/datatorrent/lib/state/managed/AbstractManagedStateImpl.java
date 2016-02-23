@@ -81,7 +81,7 @@ import com.datatorrent.netlet.util.Slice;
  * The implementations of put, getSync and getAsync here use windowId as the time field to derive timeBucket of a key.
  */
 public abstract class AbstractManagedStateImpl
-    implements ManagedState, Component<OperatorContext>, Operator.CheckpointListener, ManagedStateContext
+    implements ManagedState, Component<OperatorContext>, Operator.CheckpointNotificationListener, ManagedStateContext
 {
   private long maxMemorySize;
 
@@ -137,7 +137,7 @@ public abstract class AbstractManagedStateImpl
   {
     operatorId = context.getId();
     fileAccess.init();
-    timeBucketAssigner.register(dataManager);
+    timeBucketAssigner.setListener(dataManager);
     timeBucketAssigner.setup(context);
 
     numBuckets = getNumBuckets();
@@ -185,15 +185,15 @@ public abstract class AbstractManagedStateImpl
    */
   public abstract int getNumBuckets();
 
-  public void beginWindow(long l)
+  public void beginWindow(long windowId)
   {
     if (throwable.get() != null) {
       throw DTThrowable.wrapIfChecked(throwable.get());
     }
-    windowId = l;
+    this.windowId = windowId;
     windowCount++;
-    timeBucketAssigner.beginWindow(l);
-    if (replay && l > largestRecoveryWindow) {
+    timeBucketAssigner.beginWindow(windowId);
+    if (replay && windowId > largestRecoveryWindow) {
       replay = false;
     }
   }
@@ -299,26 +299,31 @@ public abstract class AbstractManagedStateImpl
   }
 
   @Override
-  public void checkpointed(long l)
+  public void beforeCheckpoint(long windowId)
+  {
+  }
+
+  @Override
+  public void checkpointed(long windowId)
   {
   }
 
   @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
   @Override
-  public void committed(long l)
+  public void committed(long windowId)
   {
     synchronized (commitLock) {
       try {
         for (Bucket bucket : buckets) {
           if (bucket != null) {
             synchronized (bucket) {
-              bucket.committed(l);
+              bucket.committed(windowId);
             }
           }
         }
-        dataManager.committed(operatorId, l);
+        dataManager.committed(operatorId, windowId);
       } catch (IOException | InterruptedException e) {
-        throw new RuntimeException("committing " + l, e);
+        throw new RuntimeException("committing " + windowId, e);
       }
     }
   }

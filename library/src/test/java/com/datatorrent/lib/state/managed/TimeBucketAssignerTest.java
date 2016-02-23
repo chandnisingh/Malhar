@@ -98,7 +98,7 @@ public class TimeBucketAssignerTest
   {
     final CountDownLatch latch = new CountDownLatch(1);
     final AtomicInteger timesCalled = new AtomicInteger();
-    testMeta.timeBucketAssigner.register(new TimeBucketAssigner.Listener()
+    testMeta.timeBucketAssigner.setListener(new TimeBucketAssigner.Listener()
     {
       @Override
       public void purgeTimeBucketsBefore(long time)

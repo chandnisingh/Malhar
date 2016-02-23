@@ -19,7 +19,6 @@
 package com.datatorrent.lib.state.managed;
 
 import java.util.Calendar;
-import java.util.Set;
 
 import javax.validation.constraints.NotNull;
 
@@ -27,7 +26,7 @@ import org.joda.time.Duration;
 
 import com.esotericsoftware.kryo.serializers.FieldSerializer;
 import com.esotericsoftware.kryo.serializers.JavaSerializer;
-import com.google.common.collect.Sets;
+import com.google.common.base.Preconditions;
 
 import com.datatorrent.api.Component;
 import com.datatorrent.api.Context;
@@ -46,7 +45,11 @@ import com.datatorrent.lib.appdata.query.WindowBoundedService;
  * <p/>
  *
  * The time boundaries- start and end, periodically move by span of a single time-bucket. Any event with time < start
- * is expired. These boundaries slide between application window by another thread and not the operator thread.
+ * is expired. These boundaries slide between application window by the expiry task asynchronously.<br/>
+ *
+ * The boundaries can also be moved by {@link #getTimeBucketFor(long)}. The time which is passed as an argument to this
+ * method can be ahead of <code>endTime</code>. This means that the corresponding event is a future event
+ * (wrt TimeBucketAssigner) and cannot be ignored. Therefore it is accounted by sliding boundaries further.
  */
 public class TimeBucketAssigner implements Component<Context.OperatorContext>
 {
@@ -68,8 +71,7 @@ public class TimeBucketAssigner implements Component<Context.OperatorContext>
 
   private transient WindowBoundedService windowBoundedService;
 
-  @NotNull
-  private final transient Set<Listener> listeners = Sets.newHashSet();
+  private transient Listener listener = null;
 
   private final transient Runnable expiryTask = new Runnable()
   {
@@ -79,7 +81,7 @@ public class TimeBucketAssigner implements Component<Context.OperatorContext>
       synchronized (lock) {
         startTime += bucketSpanMillis;
         endTime += bucketSpanMillis;
-        for (Listener listener : listeners) {
+        if (listener != null) {
           listener.purgeTimeBucketsBefore(startTime);
         }
       }
@@ -96,8 +98,7 @@ public class TimeBucketAssigner implements Component<Context.OperatorContext>
         bucketSpan = Duration.millis(context.getValue(Context.OperatorContext.APPLICATION_WINDOW_COUNT) *
             context.getValue(Context.DAGContext.STREAMING_WINDOW_SIZE_MILLIS));
       }
-      Calendar calendar = Calendar.getInstance();
-      long now = calendar.getTimeInMillis();
+      long now = System.currentTimeMillis();
       fixedStartTime = now - expireBefore.getMillis();
       startTime = fixedStartTime;
 
@@ -111,9 +112,9 @@ public class TimeBucketAssigner implements Component<Context.OperatorContext>
     windowBoundedService.setup(context);
   }
 
-  public void beginWindow(long l)
+  public void beginWindow(long windowId)
   {
-    windowBoundedService.beginWindow(l);
+    windowBoundedService.beginWindow(windowId);
   }
 
   public void endWindow()
@@ -129,26 +130,19 @@ public class TimeBucketAssigner implements Component<Context.OperatorContext>
    */
   public long getTimeBucketFor(long value)
   {
-    long lstart;
-    long lend;
     synchronized (lock) {
-      lstart = startTime;
-      lend = endTime;
-    }
-    if (value < lstart) {
-      return -1;
-    }
-    long diffFromStart = value - fixedStartTime;
-    long key = diffFromStart / bucketSpanMillis;
-    if (value > lend) {
-      long move = ((value - lend) / bucketSpanMillis + 1) * bucketSpanMillis;
-      synchronized (lock) {
-        startTime = lstart + move;
-        endTime = lend + move;
+      if (value < startTime) {
+        return -1;
       }
+      long diffFromStart = value - fixedStartTime;
+      long key = diffFromStart / bucketSpanMillis;
+      if (value > endTime) {
+        long move = ((value - endTime) / bucketSpanMillis + 1) * bucketSpanMillis;
+        startTime += move;
+        endTime += move;
+      }
+      return key;
     }
-
-    return key;
   }
 
   public long getStartTimeFor(long timeBucket)
@@ -156,11 +150,9 @@ public class TimeBucketAssigner implements Component<Context.OperatorContext>
     return (timeBucket * bucketSpanMillis) + fixedStartTime;
   }
 
-  public void register(@NotNull Listener listener)
+  public void setListener(@NotNull Listener listener)
   {
-    if (!listeners.contains(listener)) {
-      listeners.add(listener);
-    }
+    this.listener = Preconditions.checkNotNull(listener, "null listener");
   }
 
   @Override
