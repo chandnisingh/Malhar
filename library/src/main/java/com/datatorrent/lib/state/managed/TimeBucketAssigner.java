@@ -18,8 +18,6 @@
  */
 package com.datatorrent.lib.state.managed;
 
-import java.util.Calendar;
-
 import javax.validation.constraints.NotNull;
 
 import org.joda.time.Duration;

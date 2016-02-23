@@ -373,12 +373,8 @@ public interface Bucket extends Component<Context.OperatorContext>
       }
       if (timeBucket > bucketedValue.getTimeBucket()) {
 
-        if (bucketedValue.getValue() != null) {
-          //overriding the value so need to subtract the size of previous value
-          sizeInBytes.getAndAdd(-bucketedValue.getValue().length);
-        }
-
-        sizeInBytes.getAndAdd(value.length);
+        int inc = null == bucketedValue.getValue() ? value.length : value.length - bucketedValue.getValue().length;
+        sizeInBytes.getAndAdd(inc);
         bucketedValue.setTimeBucket(timeBucket);
         bucketedValue.setValue(value);
       }

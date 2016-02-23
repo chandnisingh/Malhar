@@ -20,11 +20,10 @@ package com.datatorrent.lib.state.managed;
 
 import java.io.IOException;
 import java.util.Comparator;
-import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 import javax.validation.constraints.NotNull;
 
@@ -43,9 +42,9 @@ import com.datatorrent.api.Context;
 class StateTracker extends TimerTask implements Component<Context.OperatorContext>
 {
   //bucket id -> last time the bucket was accessed
-  private final transient ConcurrentHashMap<Long, Long> bucketAccessTimes = new ConcurrentHashMap<>();
+  private final transient ConcurrentHashMap<Long, BucketIdTimeWrapper> bucketAccessTimes = new ConcurrentHashMap<>();
 
-  private transient PriorityQueue<Map.Entry<Long, Long>> bucketHeap;
+  private transient ConcurrentSkipListSet<BucketIdTimeWrapper> bucketHeap;
 
   private final transient Timer memoryFreeService = new Timer();
 
@@ -59,21 +58,21 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
   @Override
   public void setup(Context.OperatorContext context)
   {
-    this.bucketHeap = new PriorityQueue<>(managedState.getNumBuckets(),
-        new Comparator<Map.Entry<Long, Long>>()
+    this.bucketHeap = new ConcurrentSkipListSet<>(
+        new Comparator<BucketIdTimeWrapper>()
         {
 
           @Override
-          public int compare(Map.Entry<Long, Long> o1, Map.Entry<Long, Long> o2)
+          public int compare(BucketIdTimeWrapper o1, BucketIdTimeWrapper o2)
           {
-            if (o1.getValue() < o2.getValue()) {
+            if (o1.getLastAccessedTime() < o2.getLastAccessedTime()) {
               return -1;
             }
-            if (o1.getValue() > o2.getValue()) {
+            if (o1.getLastAccessedTime() > o2.getLastAccessedTime()) {
               return 1;
             }
 
-            return Long.compare(o1.getKey(), o2.getKey());
+            return Long.compare(o1.bucketId, o2.bucketId);
           }
         });
     long intervalMillis = managedState.getCheckStateSizeInterval().getMillis();
@@ -82,8 +81,14 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
 
   void bucketAccessed(long bucketId)
   {
-    //avoiding any delays here because this is getting invoked anytime a bucket is accessed which is with every put/get.
-    bucketAccessTimes.put(bucketId, System.currentTimeMillis());
+    BucketIdTimeWrapper idTimeWrapper = bucketAccessTimes.get(bucketId);
+    if (idTimeWrapper != null) {
+      bucketHeap.remove(idTimeWrapper);
+    }  else {
+      idTimeWrapper = new BucketIdTimeWrapper(bucketId);
+    }
+    idTimeWrapper.setLastAccessedTime(System.currentTimeMillis());
+    bucketHeap.add(idTimeWrapper);
   }
 
   @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
@@ -101,45 +106,41 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
       }
 
       if (bytesSum > managedState.getMaxMemorySize()) {
-        //populate the bucket heap
-        for (Map.Entry<Long, Long> entry : bucketAccessTimes.entrySet()) {
-          bucketHeap.add(entry);
+        Duration duration = managedState.getDurationPreventingFreeingSpace();
+        long durationMillis = 0;
+        if (duration != null) {
+          durationMillis = duration.getMillis();
         }
-      }
-      Duration duration = managedState.getDurationPreventingFreeingSpace();
-      long durationMillis = 0;
-      if (duration != null) {
-        durationMillis = duration.getMillis();
-      }
 
-      Map.Entry<Long, Long> pair;
-      while (bytesSum > managedState.getMaxMemorySize() && null != (pair = bucketHeap.poll())) {
-        //trigger buckets to free space
+        BucketIdTimeWrapper idTimeWrapper;
+        while (bytesSum > managedState.getMaxMemorySize() && null != (idTimeWrapper = bucketHeap.pollFirst())) {
+          //trigger buckets to free space
 
-        if (System.currentTimeMillis() - pair.getValue() < durationMillis) {
-          //if the least recently used bucket cannot free up space because it was accessed within the
-          //specified duration then subsequent buckets cannot free space as well because this heap is ordered by time.
-          break;
-        }
-        long bucketId = pair.getKey();
-        Bucket bucket = managedState.getBucket(bucketId);
-        if (bucket != null) {
+          if (System.currentTimeMillis() - idTimeWrapper.getLastAccessedTime() < durationMillis) {
+            //if the least recently used bucket cannot free up space because it was accessed within the
+            //specified duration then subsequent buckets cannot free space as well because this heap is ordered by time.
+            break;
+          }
+          long bucketId = idTimeWrapper.bucketId;
+          Bucket bucket = managedState.getBucket(bucketId);
+          if (bucket != null) {
 
-          synchronized (bucket) {
-            long sizeFreed;
-            try {
-              sizeFreed = bucket.freeMemory();
-              LOG.debug("size freed {} {}", bucketId, sizeFreed);
-            } catch (IOException e) {
-              managedState.throwable.set(e);
-              throw new RuntimeException("freeing " + bucketId, e);
+            synchronized (bucket) {
+              long sizeFreed;
+              try {
+                sizeFreed = bucket.freeMemory();
+                LOG.debug("size freed {} {}", bucketId, sizeFreed);
+              } catch (IOException e) {
+                managedState.throwable.set(e);
+                throw new RuntimeException("freeing " + bucketId, e);
+              }
+              bytesSum -= sizeFreed;
             }
-            bytesSum -= sizeFreed;
+
+            bucketAccessTimes.remove(bucketId);
           }
         }
-        bucketAccessTimes.remove(bucketId);
       }
-      bucketHeap.clear();
     }
   }
 
@@ -148,6 +149,45 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
     memoryFreeService.cancel();
   }
 
+  private static class BucketIdTimeWrapper
+  {
+    private final long bucketId;
+    private long lastAccessedTime;
+
+    BucketIdTimeWrapper(long bucketId) {
+      this.bucketId = bucketId;
+    }
+
+    private synchronized long getLastAccessedTime()
+    {
+      return lastAccessedTime;
+    }
+
+    private synchronized void setLastAccessedTime(long lastAccessedTime)
+    {
+      this.lastAccessedTime = lastAccessedTime;
+    }
+
+    @Override
+    public boolean equals(Object o)
+    {
+      if (this == o)
+        return true;
+      if (!(o instanceof BucketIdTimeWrapper))
+        return false;
+
+      BucketIdTimeWrapper that = (BucketIdTimeWrapper)o;
+
+      return bucketId == that.bucketId;
+
+    }
+
+    @Override
+    public int hashCode()
+    {
+      return (int)(bucketId ^ (bucketId >>> 32));
+    }
+  }
   private static final Logger LOG = LoggerFactory.getLogger(StateTracker.class);
 
 }
