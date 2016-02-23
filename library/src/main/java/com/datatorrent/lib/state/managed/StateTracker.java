@@ -41,7 +41,7 @@ import com.datatorrent.api.Context;
  */
 class StateTracker extends TimerTask implements Component<Context.OperatorContext>
 {
-  //bucket id -> last time the bucket was accessed
+  //bucket id -> bucket id & time wrapper
   private final transient ConcurrentHashMap<Long, BucketIdTimeWrapper> bucketAccessTimes = new ConcurrentHashMap<>();
 
   private transient ConcurrentSkipListSet<BucketIdTimeWrapper> bucketHeap;
@@ -149,6 +149,9 @@ class StateTracker extends TimerTask implements Component<Context.OperatorContex
     memoryFreeService.cancel();
   }
 
+  /**
+   * Wrapper class for bucket id and the last time the bucket was accessed.
+   */
   private static class BucketIdTimeWrapper
   {
     private final long bucketId;
