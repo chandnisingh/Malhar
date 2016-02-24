@@ -99,6 +99,14 @@ public interface Bucket extends Component<Context.OperatorContext>
    */
   long freeMemory() throws IOException;
 
+  /**
+   * Allows the bucket to process/cache data which is recovered (from window files) after failure.
+   *
+   * @param largestRecoveryWindow largest recovery window
+   * @param recoveredData recovered data
+   */
+  void recoveredData(long largestRecoveryWindow, Map<Slice, Bucket.BucketedValue> recoveredData);
+
   enum ReadSource
   {
     MEMORY,      //state in memory in key/value form
@@ -452,6 +460,12 @@ public interface Bucket extends Component<Context.OperatorContext>
         }
       }
       cachedBucketMetas = null;
+    }
+
+    @Override
+    public void recoveredData(long largestRecoveryWindow, Map<Slice, BucketedValue> recoveredData)
+    {
+      checkpointedData.put(largestRecoveryWindow, recoveredData);
     }
 
     @Override

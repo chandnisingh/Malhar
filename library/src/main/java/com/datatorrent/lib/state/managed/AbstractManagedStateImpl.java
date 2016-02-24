@@ -147,6 +147,10 @@ public abstract class AbstractManagedStateImpl
     //setup state data manager
     dataManager.setup(context);
 
+    stateTracker.setup(context);
+
+    largestRecoveryWindow = dataManager.getLargestRecoveryWindow();
+
     //recovering data for window files to bucket
     try {
       Map<Long, Map<Slice, Bucket.BucketedValue>> recovered = dataManager.load(operatorId);
@@ -154,18 +158,13 @@ public abstract class AbstractManagedStateImpl
 
         for (Map.Entry<Long, Map<Slice, Bucket.BucketedValue>> entry : recovered.entrySet()) {
           int bucketIdx = prepareBucket(entry.getKey());
-
-          for (Map.Entry<Slice, Bucket.BucketedValue> dataEntry : entry.getValue().entrySet()) {
-            buckets[bucketIdx].put(dataEntry.getKey(), dataEntry.getValue().getTimeBucket(),
-                dataEntry.getValue().getValue());
-          }
+          buckets[bucketIdx].recoveredData(largestRecoveryWindow, entry.getValue());
         }
       }
     } catch (IOException e) {
       throw new RuntimeException("recovering", e);
     }
 
-    largestRecoveryWindow = dataManager.getLargestRecoveryWindow();
     long activationWindow = context.getValue(OperatorContext.ACTIVATION_WINDOW_ID);
 
     if (activationWindow != Stateless.WINDOW_ID && largestRecoveryWindow <= activationWindow) {
@@ -173,7 +172,6 @@ public abstract class AbstractManagedStateImpl
     }
 
     readerService = Executors.newFixedThreadPool(numReaders, new NameableThreadFactory("managedStateReaders"));
-    stateTracker.setup(context);
   }
 
   /**

@@ -233,6 +233,26 @@ public class ManagedStateImplTest
 
     Assert.assertEquals("value of one", one, value);
     testMeta.managedState.teardown();
+  }
 
+  @Test
+  public void testRecovery() throws ExecutionException, InterruptedException
+  {
+    testMeta.managedState.setIncrementalCheckpointWindowCount(1);
+
+    Slice one = ManagedStateTestUtils.getSliceFor("1");
+    testMeta.managedState.setup(testMeta.operatorContext);
+    long time = System.currentTimeMillis();
+    testMeta.managedState.beginWindow(0);
+    testMeta.managedState.put(0, time, one, one);
+    testMeta.managedState.endWindow();
+    testMeta.managedState.teardown();
+
+    //there is a failure and the operator is re-deployed.
+    testMeta.managedState.setStateTracker(new StateTracker(testMeta.managedState));
+    testMeta.managedState.setup(testMeta.operatorContext);
+
+    Bucket.DefaultBucket defaultBucket = (Bucket.DefaultBucket)testMeta.managedState.getBucket(0);
+    Assert.assertEquals("value of one", one, defaultBucket.get(one, time, Bucket.ReadSource.MEMORY));
   }
 }

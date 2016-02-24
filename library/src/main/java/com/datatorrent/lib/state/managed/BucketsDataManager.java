@@ -68,8 +68,7 @@ public class BucketsDataManager extends WindowDataManager.FSWindowDataManager im
   private final transient Map<Long, Map<Long, Map<Slice, Bucket.BucketedValue>>> savedWindows = new
       ConcurrentSkipListMap<>();
 
-  private final transient ExecutorService writerService = Executors.newSingleThreadExecutor(
-      new NameableThreadFactory("managed-state-writer"));
+  private transient ExecutorService writerService;
   private transient boolean transfer;
 
   private final transient LinkedBlockingQueue<Long> windowsToTransfer = Queues.newLinkedBlockingQueue();
@@ -111,6 +110,7 @@ public class BucketsDataManager extends WindowDataManager.FSWindowDataManager im
     waitMillis = context.getValue(Context.OperatorContext.SPIN_MILLIS);
     super.setup(context);
 
+    writerService = Executors.newSingleThreadExecutor(new NameableThreadFactory("managed-state-writer"));
     writerService.submit(new Runnable()
     {
       @Override
