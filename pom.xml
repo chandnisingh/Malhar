@@ -25,7 +25,7 @@
   <parent>
     <groupId>org.apache.apex</groupId>
     <artifactId>apex</artifactId>
-    <version>3.2.0-incubating</version>
+    <version>3.3.0-incubating</version>
   </parent>
 
   <groupId>org.apache.apex</groupId>
@@ -49,8 +49,9 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.deploy.skip>false</maven.deploy.skip>
-    <apex.core.version>3.2.0-incubating</apex.core.version>
+    <apex.core.version>3.3.0-incubating</apex.core.version>
     <semver.plugin.skip>false</semver.plugin.skip>
+    <checkstyle.console>false</checkstyle.console>
   </properties>
 
   <build>
@@ -89,13 +90,6 @@
           </excludes>
         </configuration>
       </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-checkstyle-plugin</artifactId>
-        <configuration>
-          <maxAllowedViolations>8252</maxAllowedViolations>
-        </configuration>
-      </plugin>
     </plugins>
     <pluginManagement>
       <plugins>
@@ -125,12 +119,8 @@
               <includeSynthetic>false</includeSynthetic>
               <ignoreMissingClasses>true</ignoreMissingClasses>
               <excludes>
-                <exclude>@org.apache.hadoop.classification.InterfaceStability.Evolving</exclude>
-                <exclude>@org.apache.hadoop.classification.InterfaceStability.Unstable</exclude>
-                <exclude>com.datatorrent.lib.parser.JsonParser</exclude>
-                <exclude>com.datatorrent.lib.parser.Parser</exclude>
-                <exclude>com.datatorrent.lib.parser.XmlParser</exclude>
-                <exclude>com.datatorrent.contrib.parser.CsvParser</exclude>
+                <exclude>@org.apache.hadoop.classification.InterfaceStability$Evolving</exclude>
+                <exclude>@org.apache.hadoop.classification.InterfaceStability$Unstable</exclude>
               </excludes>
             </parameter>
             <skip>${semver.plugin.skip}</skip>
@@ -143,6 +133,13 @@
               </goals>
             </execution>
           </executions>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-checkstyle-plugin</artifactId>
+          <configuration>
+            <consoleOutput>true</consoleOutput>
+          </configuration>
         </plugin>
       </plugins>
     </pluginManagement>
