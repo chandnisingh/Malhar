@@ -35,6 +35,7 @@
     <module>logstream</module>
     <module>autometric</module>
     <module>jdbc</module>
+    <module>spitter</module>
   </modules>
 
   <properties>

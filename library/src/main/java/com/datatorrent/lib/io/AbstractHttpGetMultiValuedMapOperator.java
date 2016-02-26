@@ -36,7 +36,8 @@ import com.sun.jersey.api.client.WebResource;
  * @since 1.0.2
  */
 @org.apache.hadoop.classification.InterfaceStability.Evolving
-public abstract class AbstractHttpGetMultiValuedMapOperator<INPUT, OUTPUT> extends AbstractHttpGetOperator<INPUT, OUTPUT>
+public abstract class AbstractHttpGetMultiValuedMapOperator<INPUT, OUTPUT>
+    extends AbstractHttpGetOperator<INPUT, OUTPUT>
 {
   @Override
   protected WebResource getResourceWithQueryParams(INPUT t)
