@@ -369,6 +369,7 @@ public class BucketsMetaDataManager
   {
     private ImmutableTimeBucketMeta()
     {
+      //This is private so that immutable time bucket meta
       super();
     }
 

@@ -107,7 +107,7 @@ public abstract class AbstractManagedStateImpl
   private final BucketsMetaDataManager bucketsMetaDataManager = new BucketsMetaDataManager(this);
 
   private transient int operatorId;
-  private transient long windowId;
+  protected transient long windowId;
 
   private transient int windowCount;
 
@@ -176,8 +176,8 @@ public abstract class AbstractManagedStateImpl
 
   /**
    * Gets the number of buckets which is required during setup to create the array of buckets.<br/>
-   * {@link ManagedStateImpl} provides num of buckets which is injected using a property.<br/>
-   * {@link TimeManagedStateImpl} provides num of buckets which are calculated based on time settings.
+   * {@link ManagedTimeStateImpl} provides num of buckets which is injected using a property.<br/>
+   * {@link ManageTimeUnifiedStateImpl} provides num of buckets which are calculated based on time settings.
    *
    * @return number of buckets.
    */
@@ -196,38 +196,6 @@ public abstract class AbstractManagedStateImpl
     }
   }
 
-  @Override
-  public void put(long bucketId, Slice key, Slice value)
-  {
-    if (replay) {
-      return;
-    }
-    long timeBucket = timeBucketAssigner.getTimeBucketFor(windowId);
-    if (timeBucket != -1) {
-      int bucketIdx = prepareBucket(bucketId);
-      buckets[bucketIdx].put(key, timeBucket, value);
-    }
-  }
-
-  @Override
-  public Slice getSync(long bucketId, Slice key)
-  {
-    int bucketIdx = prepareBucket(bucketId);
-    return buckets[bucketIdx].get(key, -1, Bucket.ReadSource.ALL);
-  }
-
-  @Override
-  public Future<Slice> getAsync(long bucketId, Slice key)
-  {
-    int bucketIdx = prepareBucket(bucketId);
-    Bucket bucket = buckets[bucketIdx];
-
-    Slice cachedVal = buckets[bucketIdx].get(key, -1, Bucket.ReadSource.MEMORY);
-    if (cachedVal != null) {
-      return Futures.immediateFuture(cachedVal);
-    }
-    return readerService.submit(new KeyFetchTask(bucket, key, -1, throwable));
-  }
 
   /**
    * Prepares the bucket and returns its index.

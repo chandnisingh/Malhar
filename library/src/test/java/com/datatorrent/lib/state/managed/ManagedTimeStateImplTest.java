@@ -38,18 +38,18 @@ import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
 import com.datatorrent.lib.util.KryoCloneUtils;
 import com.datatorrent.netlet.util.Slice;
 
-public class ManagedStateImplTest
+public class ManagedTimeStateImplTest
 {
   class TestMeta extends TestWatcher
   {
-    ManagedStateImpl managedState;
+    ManagedTimeStateImpl managedState;
     Context.OperatorContext operatorContext;
     String applicationPath;
 
     @Override
     protected void starting(Description description)
     {
-      managedState = new ManagedStateImpl();
+      managedState = new ManagedTimeStateImpl();
       applicationPath = "target/" + description.getClassName() + "/" + description.getMethodName();
       ((FileAccessFSImpl)managedState.getFileAccess()).setBasePath(applicationPath + "/" + "bucket_data");
 
@@ -73,7 +73,7 @@ public class ManagedStateImplTest
   @Test
   public void testSerde() throws IOException
   {
-    ManagedStateImpl deserialized = KryoCloneUtils.cloneObject(testMeta.managedState);
+    ManagedTimeStateImpl deserialized = KryoCloneUtils.cloneObject(testMeta.managedState);
     Assert.assertEquals("num buckets", deserialized.getNumBuckets(), testMeta.managedState.getNumBuckets());
   }
 

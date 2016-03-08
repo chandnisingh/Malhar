@@ -57,45 +57,4 @@ public interface BucketedState
    */
   Future<Slice> getAsync(long bucketId, Slice key);
 
-  /**
-   * A type of {@link BucketedState} where a bucket's data is further divided into time buckets. This requires
-   * time per key to figure out which time bucket a particular key belongs to.
-   * <p/>
-   * This state eases the purging of aged key/value pair.
-   */
-  interface TimeSlicedBucketedState extends BucketedState
-  {
-    /**
-     * Sets the value of a key in the bucket identified by bucketId. Time is used to derive which time bucket a
-     * key belongs to.
-     *
-     * @param bucketId identifier of the bucket.
-     * @param time    time associated with the key.
-     * @param key     key
-     * @param value   value
-     */
-    void put(long bucketId, long time, Slice key, Slice value);
-
-    /**
-     * Returns the value of key in the bucket identified by bucketId. Time is used to derive the time bucket to which
-     * the key belonged. This retrieves the value synchronously which can be expensive.<br/>
-     * {@link #getAsync(long, long, Slice)} is recommended for efficiently reading the value of a key.
-     *
-     * @param bucketId identifier of the bucket.
-     * @param time  time associated with the key.
-     * @param key   key
-     * @return      value
-     */
-    Slice getSync(long bucketId, long time, Slice key);
-
-    /**
-     * Similar to {@link #getAsync(long, Slice)} returns the future using which the value is obtained.
-     *
-     * @param bucketId  identifier of the bucket.
-     * @param time     time associated with the key.
-     * @param key      key
-     * @return         value
-     */
-    Future<Slice> getAsync(long bucketId, long time, Slice key);
-  }
 }

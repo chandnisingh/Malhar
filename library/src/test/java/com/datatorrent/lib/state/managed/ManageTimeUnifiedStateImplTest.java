@@ -37,18 +37,18 @@ import com.datatorrent.lib.fileaccess.FileAccessFSImpl;
 import com.datatorrent.lib.util.KryoCloneUtils;
 import com.datatorrent.netlet.util.Slice;
 
-public class TimeManagedStateImplTest
+public class ManageTimeUnifiedStateImplTest
 {
   class TestMeta extends TestWatcher
   {
-    TimeManagedStateImpl managedState;
+    ManageTimeUnifiedStateImpl managedState;
     Context.OperatorContext operatorContext;
     String applicationPath;
 
     @Override
     protected void starting(Description description)
     {
-      managedState = new TimeManagedStateImpl();
+      managedState = new ManageTimeUnifiedStateImpl();
       applicationPath = "target/" + description.getClassName() + "/" + description.getMethodName();
       ((FileAccessFSImpl)managedState.getFileAccess()).setBasePath(applicationPath + "/" + "bucket_data");
 
@@ -72,7 +72,7 @@ public class TimeManagedStateImplTest
   @Test
   public void testSerde() throws IOException
   {
-    TimeManagedStateImpl deserialized = KryoCloneUtils.cloneObject(testMeta.managedState);
+    ManageTimeUnifiedStateImpl deserialized = KryoCloneUtils.cloneObject(testMeta.managedState);
     Assert.assertEquals("num buckets", deserialized.getNumBuckets(), testMeta.managedState.getNumBuckets());
   }
 

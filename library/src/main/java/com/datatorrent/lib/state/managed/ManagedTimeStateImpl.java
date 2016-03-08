@@ -24,34 +24,35 @@ import javax.validation.constraints.Min;
 
 import com.google.common.util.concurrent.Futures;
 
-import com.datatorrent.lib.state.BucketedState;
+import com.datatorrent.api.annotation.OperatorAnnotation;
+import com.datatorrent.lib.state.TimeSlicedBucketedState;
 import com.datatorrent.netlet.util.Slice;
 
 /**
- * Basic implementation of {@link ManagedState} where window is used to sub-group key of a particular bucket.<br/>
- *
+ * This implementation of {@link ManagedState} lets the client to specify the time for each key. The value of time
+ * is used to derive the time-bucket of a key.
  */
-public class ManagedStateImpl extends AbstractManagedStateImpl implements BucketedState
+@OperatorAnnotation(checkpointableWithinAppWindow = false)
+public class ManagedTimeStateImpl extends AbstractManagedStateImpl implements TimeSlicedBucketedState
 {
-
-  public ManagedStateImpl()
+  public ManagedTimeStateImpl()
   {
     this.numBuckets = 1;
   }
 
   @Override
-  public void put(long bucketId, Slice key, Slice value)
+  public void put(long bucketId, long time, Slice key, Slice value)
   {
     if (replay) {
       return;
     }
-    long timeBucket = timeBucketAssigner.getTimeBucketFor(windowId);
+
+    int bucketIdx = prepareBucket(bucketId);
+    long timeBucket = timeBucketAssigner.getTimeBucketFor(time);
     if (timeBucket != -1) {
-      int bucketIdx = prepareBucket(bucketId);
       buckets[bucketIdx].put(key, timeBucket, value);
     }
   }
-
 
   @Override
   public Slice getSync(long bucketId, Slice key)
@@ -60,20 +61,50 @@ public class ManagedStateImpl extends AbstractManagedStateImpl implements Bucket
     return buckets[bucketIdx].get(key, -1, Bucket.ReadSource.ALL);
   }
 
+  @Override
+  public Slice getSync(long bucketId, long time, Slice key)
+  {
+    int bucketIdx = prepareBucket(bucketId);
+    long timeBucket = timeBucketAssigner.getTimeBucketFor(time);
+    if (timeBucket == -1) {
+      //time is expired so no point in looking further.
+      return null;
+    }
+    return buckets[bucketIdx].get(key, timeBucket, Bucket.ReadSource.ALL);
+  }
+
   @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
   @Override
   public Future<Slice> getAsync(long bucketId, Slice key)
   {
     int bucketIdx = prepareBucket(bucketId);
     Bucket bucket = buckets[bucketIdx];
-
     synchronized (bucket) {
-
       Slice cachedVal = buckets[bucketIdx].get(key, -1, Bucket.ReadSource.MEMORY);
       if (cachedVal != null) {
         return Futures.immediateFuture(cachedVal);
       }
       return readerService.submit(new KeyFetchTask(bucket, key, -1, throwable));
+    }
+  }
+
+  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
+  @Override
+  public Future<Slice> getAsync(long bucketId, long time, Slice key)
+  {
+    int bucketIdx = prepareBucket(bucketId);
+    Bucket bucket = buckets[bucketIdx];
+    long timeBucket = timeBucketAssigner.getTimeBucketFor(time);
+    if (timeBucket == -1) {
+      //time is expired so no point in looking further.
+      return null;
+    }
+    synchronized (bucket) {
+      Slice cachedVal = buckets[bucketIdx].get(key, timeBucket, Bucket.ReadSource.MEMORY);
+      if (cachedVal != null) {
+        return Futures.immediateFuture(cachedVal);
+      }
+      return readerService.submit(new KeyFetchTask(bucket, key, timeBucket, throwable));
     }
   }
 
@@ -93,4 +124,5 @@ public class ManagedStateImpl extends AbstractManagedStateImpl implements Bucket
   {
     this.numBuckets = numBuckets;
   }
+
 }

@@ -19,12 +19,10 @@
 
 package com.datatorrent.lib.state.managed;
 
-import com.datatorrent.lib.state.BucketedState;
-
 /**
  * Managed state has a limit on amount of data in memory.
  */
-public interface ManagedState extends BucketedState
+public interface ManagedState
 {
   /**
    * Sets the maximum memory size.
