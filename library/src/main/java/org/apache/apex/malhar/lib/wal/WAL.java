@@ -18,45 +18,43 @@
  */
 package org.apache.apex.malhar.lib.wal;
 
-import java.io.Closeable;
 import java.io.IOException;
 
 /**
  * This interface represents a write ahead log that can be used by operator.
  * the WAL is split into two interfaces, a WALWriter which allows writing
  * data, and WALReader which provides iterator like interface to read entries
- * writen to the WAL.
+ * written to the WAL.
  *
- * @param <T> Tuple type
- * @param <P> WAL Pointer Type.
+ * @param <READER> Type of WAL Reader
+ * @param <WRITER> WAL Pointer Type.
  */
-public interface WAL<T, P>
+public interface WAL<READER extends WAL.WALReader, WRITER extends WAL.WALWriter>
 {
-  WALReader<T, P> getReader() throws IOException;
+  void setup();
 
-  WALWriter<T, P> getWriter() throws IOException;
+  void teardown();
+
+  void beforeCheckpoint(long window);
+
+  void committed(long window);
+
+  READER getReader() throws IOException;
+
+  WRITER getWriter() throws IOException;
 
   /**
    * Provides iterator like interface to read entries from the WAL.
    * @param <T> type of WAL entries
    * @param <P> type of Pointer in the WAL
    */
-  interface WALReader<T, P> extends Closeable
+  interface WALReader<T, P>
   {
-    /**
-     * Close WAL after read.
-     *
-     * @param offset seek offset.
-     * @throws IOException
-     */
-    @Override
-    void close() throws IOException;
-
     /**
      * Seek to middle of the WAL. This is used primarily during recovery,
      * when we need to start recovering data from middle of WAL file.
      */
-    void seek(P offset) throws IOException;
+    void seek(P pointer) throws IOException;
 
     /**
      * Advance WAL by one entry, returns true if it can advance, else false
@@ -73,12 +71,6 @@ public interface WAL<T, P>
      * @return MutableKeyValue
      */
     T get();
-
-    /**
-     * Return the offset corresponding to the last read entry.
-     * @return
-     */
-    P getOffset();
   }
 
   /**
@@ -89,32 +81,10 @@ public interface WAL<T, P>
   interface WALWriter<T, P>
   {
     /**
-     * flush pending data to disk and close file.
-     *
-     * @throws IOException
-     */
-    void close() throws IOException;
-
-    /**
-     * Write an entry to the WAL, this operation need not flush the data.
+     * Write an entry to the WAL
      */
     int append(T entry) throws IOException;
 
-    /**
-     * Flush data to persistent storage.
-     *
-     * @throws IOException
-     */
-    void flush() throws IOException;
-
-    /**
-     * Returns size of the WAL, last part of the log may not be persisted on disk.
-     * In case of file backed WAL this will be the size of file, in case of kafka
-     * like log, this will be similar to the message offset.
-     *
-     * @return The log size
-     */
-    P getOffset();
   }
 
   /**
